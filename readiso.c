@@ -9,7 +9,7 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "v1.1"
+#define VERSION "v1.2beta"
 #define PRGNAME "readiso"
 
 #include <stdio.h>
@@ -29,9 +29,15 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/ioctl.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
+
+#include <sigfpe.h>
+#include <dmedia/cdaudio.h>
+#include <dmedia/audio.h>
+#include <dmedia/audiofile.h>
 
 #include "config.h"
 #include "md5.h"
@@ -64,12 +70,14 @@
 #define READBLOCKS     1
 #endif
 
-#define BLOCKSIZE      2048  /* (read) block size */
+#define BLOCKSIZE      2048  /* data block size */
+#define AUDIOBLOCKSIZE 2368  /* cdda (2352) + subcode-q (16) */
 
 #define MAX_DIFF_ALLOWED  512  /* how many blocks image size can be smaller
                                   than track size, before we override image
 				  size with track size */
 
+#define DATA_TRACK   0x04
 
 /* scsi commands used by the program */
 #define TESTREADY   0x00
@@ -150,6 +158,11 @@ typedef struct iso_primary_descriptor_type_ {
 } iso_primary_descriptor_type;
 
 
+static ALport audioport;
+static ALconfig audioconf;
+static AFfilehandle aiffoutfile;
+static AFfilesetup aiffsetup;
+
 
 #ifndef DEFAULT_DEV
 #define DEFAULT_DEV "/dev/cdrom"
@@ -176,7 +189,10 @@ int fd;    /* file descriptor of the scsi device open */
 #endif
 
 static char rcsid[] = "$Id$";
-int verbose_mode = 0;
+static int verbose_mode = 0;
+static int dump_mode = 0;
+static int audio_mode = 1;
+static FILE *outfile=NULL;
 
 static struct option long_options[] = {
   {"verbose",0,0,'v'},
@@ -185,9 +201,15 @@ static struct option long_options[] = {
   {"device",1,0,'d'},
   {"track",1,0,'t'},
   {"force",1,0,'f'},
-  {"md5",1,0,'m'},
-  {"MD5",1,0,'M'},
-  {"copy",1,0,'c'}
+  {"md5",0,0,'m'},
+  {"MD5",0,0,'M'},
+  {"dump",1,0,'c'},
+  {"dumpaudio",1,0,'C'},
+  {"aiff",0,0,'a'},
+  {"aiffc",0,0,'A'},
+  {"sound",0,0,'s'},
+  {"version",0,0,'V'},
+  {NULL,0,0,0}
 };
 
 
@@ -216,8 +238,6 @@ char *md2str(unsigned char *digest, char *s)
 }
 
 
-
-
 void die(char *format, ...)
 {
   va_list args;
@@ -231,9 +251,22 @@ void die(char *format, ...)
   exit(1);
 }
 
+void warn(char *format, ...)
+{
+  va_list args;
+
+  fprintf(stderr, PRGNAME ": ");
+  va_start(args,format);
+  vfprintf(stderr, format, args);
+  va_end(args);
+  fprintf(stderr,"\n");
+  fflush(stderr);
+}
+
+
 void p_usage(void) 
 {
-  fprintf(stderr, PRGNAME " " VERSION "  " HOST_TYPE "   "
+  fprintf(stderr, PRGNAME " " VERSION "  "
 	  "Copyright (c) Timo Kokkonen, 1997-1998.\n"); 
 
   fprintf(stderr,
@@ -252,6 +285,14 @@ void p_usage(void)
           "                  mode = 1 (trust ISO primary descriptor)\n"
 	  "                         2 (trust TOC record)\n"
 	  "  --track=<n>     reads specified track (default is first data track found)\n"
+	  "  --version       display program version and exit\n"
+	  " CD-DA parameters:\n"
+	  "  --dumpaudio=<lba,n>\n"
+	  "                  dump raw audio sectors with subcode-q data\n"
+	  "  --aiff          select AIFF as output file format\n"
+	  "  --aiffc         select AIFF-C as output file format\n"
+	  
+
 	  "\n");
 
   exit(1);
@@ -427,7 +468,7 @@ int read_toc(unsigned char *buf, int *buflen, int mode)
     o=4+i*8; /* offset to track descriptor */
     printf("Track %02d: %s (adr/ctrl=%02xh) begin=%06d end=%06d  "
            "length<=%06d\n",
-	   i+1,(buf[o+1]&0x04?"data ":"audio"),buf[o+1],V4(&buf[o+4]),
+	   i+1,(buf[o+1]&DATA_TRACK?"data ":"audio"),buf[o+1],V4(&buf[o+4]),
 	   V4(&buf[o+4+8]),V4(&buf[o+4+8])-V4(&buf[o+4]) );
 
   }
@@ -448,20 +489,25 @@ int read_10(int lba, int len, unsigned char *buf, int *buflen)
 }
 
 
-int mode_select(int bsize)
+int mode_select(int bsize, int density)
 {
   return scsi_request("mode_select",0,0,6,12,SCSIR_WRITE,
 		     0x15,0x10,0,0,12,0,
 		     0,0,0,8,
-		     0,B3(0),0,B3(bsize) );
+		     density,B3(0),0,B3(bsize) );
 }
 
+playaudio(void *arg, CDDATATYPES type, short *audio)
+{
+  if (audio_mode) ALwritesamps(audioport, audio, CDDA_NUMSAMPLES);
+  if (!dump_mode) AFwriteframes(aiffoutfile,AF_DEFAULT_TRACK,audio,
+				CDDA_NUMSAMPLES/2);
+}
 
 
 /************************************************************************/
 int main(int argc, char **argv) 
 {
-  FILE *outfile=NULL;
   iso_primary_descriptor_type  ipd;
   char *dev = default_dev;
   char vendor[9],model[17],rev[5];
@@ -475,26 +521,31 @@ int main(int argc, char **argv)
   int counter = 0;
   long readsize = 0;
   long imagesize_bytes;
-  int drive_block_size;
+  int drive_block_size, init_bsize;
   int force_mode = 0;
-  int dump_mode = 0;
   int dump_start, dump_count;
   MD5_CTX *MD5; 
   char digest[16],digest_text[33];
   int md5_mode = 0;
   int opt_index = 0;
+  int audio_track = 0;
+  int readblocksize = BLOCKSIZE;
+  int file_format = AF_FILE_AIFFC;
 #ifdef LINUX
   int fd;
   char *s;
 #endif
+  CDPARSER *cdp = CDcreateparser();
+  CDFRAME  cdframe;
+
 
   int i,c,o;
-  unsigned int len;
+  int len;
 
   if (rcsid); 
 
   MD5 = malloc(sizeof(MD5_CTX));
-  buffer=(unsigned char*)malloc(READBLOCKS*BLOCKSIZE);
+  buffer=(unsigned char*)malloc(READBLOCKS*AUDIOBLOCKSIZE);
   if (!buffer || !MD5) die("No memory");
 
   if (argc<2) die("parameter(s) missing\n"
@@ -506,6 +557,12 @@ int main(int argc, char **argv)
     if ((c=getopt_long(argc,argv,"Mmvhid:",long_options,&opt_index))
 	== -1) break;
     switch (c) {
+    case 'a':
+      file_format=AF_FILE_AIFF;
+      break;
+    case 'A':
+      file_format=AF_FILE_AIFFC;
+      break;
     case 'v':
       verbose_mode=1;
       break;
@@ -526,6 +583,11 @@ int main(int argc, char **argv)
 	die("invalid parameters");
       dump_mode=1;
       break;
+    case 'C':
+      if (sscanf(optarg,"%d,%d",&dump_start,&dump_count)!=2)
+	die("invalid parameters");
+      dump_mode=2;
+      break;
     case 'f':
       if (sscanf(optarg,"%d",&force_mode)!=1) die("invalid parameters");
       if (force_mode<1 || force_mode >2) {
@@ -537,6 +599,14 @@ int main(int argc, char **argv)
       break;
     case 'M':
       md5_mode=2;
+      break;
+    case 's':
+      audio_mode=1;
+      break;
+    case 'V':
+      printf(PRGNAME " "  VERSION "  " HOST_TYPE
+	     "\nCopyright (c) Timo Kokkonen, 1997-1998.\n\n"); 
+      exit(0);
       break;
 
     case '?':
@@ -587,26 +657,52 @@ int main(int argc, char **argv)
   }
 
   fprintf(stderr,"Initializing...\n");
+  if (audio_mode) {
+    audioport=ALopenport("readiso","w",0);
+    if (!audioport) {
+      warn("Cannot initialize audio.");
+      audio_mode=0;
+    }
+  }
+  /* Make sure we get sane underflow exception handling */
+  sigfpe_[_UNDERFL].repls = _ZERO;
+  handle_sigfpes(_ON, _EN_UNDERFL, NULL, _ABORT_ON_ERROR, NULL);
   set_removable(1);
   replylen=sizeof(reply);
-  mode_select(2048);
+  if (dump_mode==2) init_bsize=AUDIOBLOCKSIZE;
+  else init_bsize=BLOCKSIZE;
+  mode_select(init_bsize,(dump_mode==2?0x82:0x00));
   if (mode_sense(reply,&replylen)!=0) die("cannot get sense data");
   drive_block_size=V3(&reply[9]);
-  if (drive_block_size!=2048) die("cannot set drive to 2048bytes/block mode.");
+  if (drive_block_size!=init_bsize) die("cannot set drive block size.");
   start_stop(1);
+  fprintf(stderr,"block size=%d\n",drive_block_size);
 
 
-  if (dump_mode) {
+  if (dump_mode && !info_only) {
+    CDFRAME buf;
+    if (dump_mode==2) {
+      if (cdp) {
+	CDaddcallback(cdp, cd_audio, (CDCALLBACKFUNC)playaudio, 0);
+      } else die("No audioparser");
+    }
     fprintf(stderr,"Dumping %d sector(s) starting from LBA=%d\n",
 	    dump_count,dump_start);
     for (i=dump_start;i<dump_start+dump_count;i++) {
       len=buffersize;
       read_10(i,1,buffer,&len);
-      if (len<2048) break;
-      fwrite(buffer,len,1,outfile);
+      if (len<init_bsize) break;
+
+      if (dump_mode==2) {
+	memcpy(&buf,buffer,CDDA_BLOCKSIZE);
+	CDparseframe(cdp,&buf);
+      }
+	
+      fwrite(buffer,len,1,outfile); 
       fprintf(stderr,".");
     }
     fprintf(stderr,"\ndone.\n");
+    
     goto quit;
   }
 
@@ -619,15 +715,27 @@ int main(int argc, char **argv)
   if (trackno==0) { /* try to find first data track */
     for (i=0;i<(replylen-2)/8-1;i++) {
       o=4+i*8;
-      if (reply[o+1]&0x04) { trackno=i+1; break; }
+      if (reply[o+1]&DATA_TRACK) { trackno=i+1; break; }
     }
     if (trackno==0) die("No data track(s) found.");
   }
 
   fprintf(stderr,"Reading track %d...\n",trackno); 
 
-  if ( (trackno < reply[2]) || (trackno > reply[3]) || 
-      ((reply[(trackno-1)*8+4+1]&0x04)==0) ) die("Not a data track.");
+  if ( (trackno < reply[2]) || (trackno > reply[3]) )
+    die("Invalid track specified.");
+    
+  if ( ((reply[(trackno-1)*8+4+1]&DATA_TRACK)==0) ) {
+    fprintf(stderr,"Not a data track.\n");
+    mode_select(AUDIOBLOCKSIZE,0x82);
+    if (mode_sense(reply,&replylen)!=0) die("cannot get sense data");
+    drive_block_size=V3(&reply[9]);
+    fprintf(stderr,"Selecting CD-DA mode, output file format: %s\n",
+	    file_format==AF_FILE_AIFFC?"AIFFC":"AIFF");
+    audio_track=1;
+  } else {
+    audio_track=0;
+  }
 
 
   start=V4(&reply[(trackno-1)*8+4+4]);
@@ -638,78 +746,102 @@ int main(int argc, char **argv)
   len=buffersize;
   read_10(start-0,1,buffer,&len);
   /* PRINT_BUF(buffer,32); */
+
   
-  /* read the iso9660 primary descriptor */
-  fprintf(stderr,"Reading ISO9660 primary descriptor...\n");
-  len=buffersize;
-  read_10(start+16,1,buffer,&len);
-  if (len<sizeof(ipd)) die("cannot read iso9660 primary descriptor.");
-  memcpy(&ipd,buffer,sizeof(ipd));
-
-  imagesize=ISONUM(ipd.volume_space_size);
-
-  /* we should really check here if we really got a valid primary descriptor */
-  if ( (imagesize>(stop-start)) || (imagesize<1) ) {
-    fprintf(stderr,"\aInvalid ISO primary descriptor!!!\n");
-    if (!info_only) fprintf(stderr,"Copying entire track to image file.\n");
-    force_mode=2;
-  }
-
-  if (force_mode==1) {} /* use size from ISO primary descriptor */
-  else if (force_mode==2) imagesize=tracksize; /* use size from TOC */
-  else {
-    if (  ( (tracksize-imagesize) > MAX_DIFF_ALLOWED ) || 
-	  ( imagesize > tracksize )  )   {
-      fprintf(stderr,"ISO primary descriptor has suspicious volume size"
-	             " (%d blocks)\n",imagesize);
-      imagesize=tracksize;
-      fprintf(stderr,"Using track size from TOC record (%d blocks) instead.\n",
-	      imagesize);
-      fprintf(stderr,"(option -f can be used to override this behaviour.)\n");
+  if (!audio_track) {
+    /* read the iso9660 primary descriptor */
+    fprintf(stderr,"Reading ISO9660 primary descriptor...\n");
+    len=buffersize;
+    read_10(start+16,1,buffer,&len);
+    if (len<sizeof(ipd)) die("cannot read iso9660 primary descriptor.");
+    memcpy(&ipd,buffer,sizeof(ipd));
+    
+    imagesize=ISONUM(ipd.volume_space_size);
+    
+    /* we should really check here if we really got a valid primary 
+       descriptor or not... */
+    if ( (imagesize>(stop-start)) || (imagesize<1) ) {
+      fprintf(stderr,"\aInvalid ISO primary descriptor!!!\n");
+      if (!info_only) fprintf(stderr,"Copying entire track to image file.\n");
+      force_mode=2;
     }
-  }
+    
+    if (force_mode==1) {} /* use size from ISO primary descriptor */
+    else if (force_mode==2) imagesize=tracksize; /* use size from TOC */
+    else {
+      if (  ( (tracksize-imagesize) > MAX_DIFF_ALLOWED ) || 
+	    ( imagesize > tracksize )  )   {
+	fprintf(stderr,"ISO primary descriptor has suspicious volume size"
+		" (%d blocks)\n",imagesize);
+	imagesize=tracksize;
+	fprintf(stderr,
+		"Using track size from TOC record (%d blocks) instead.\n", 
+		imagesize);
+	fprintf(stderr,
+		"(option -f can be used to override this behaviour.)\n");
+      }
+    }
 
-  imagesize_bytes=imagesize*BLOCKSIZE;
+    imagesize_bytes=imagesize*BLOCKSIZE;
     
 
-  if (verbose_mode||info_only) {
-    printf("ISO9660 image info:\n");
-    printf("Type:              %02xh\n",ipd.type[0]);  
-    ISOGETSTR(tmpstr,ipd.id,5);
-    printf("ID:                %s\n",tmpstr);
-    printf("Version:           %u\n",ipd.version[0]);
-    ISOGETSTR(tmpstr,ipd.system_id,32);
-    printf("System id:         %s\n",tmpstr);
-    ISOGETSTR(tmpstr,ipd.volume_id,32);
-    printf("Volume id:         %s\n",tmpstr);
-    ISOGETSTR(tmpstr,ipd.volume_set_id,128);
-    if (strlen(tmpstr)>0) printf("Volume set id:     %s\n",tmpstr);
-    ISOGETSTR(tmpstr,ipd.publisher_id,128);
-    if (strlen(tmpstr)>0) printf("Publisher id:      %s\n",tmpstr);
-    ISOGETSTR(tmpstr,ipd.preparer_id,128);
-    if (strlen(tmpstr)>0) printf("Preparer id:       %s\n",tmpstr);
-    ISOGETSTR(tmpstr,ipd.application_id,128);
-    if (strlen(tmpstr)>0) printf("Application id:    %s\n",tmpstr);
-    ISOGETDATE(tmpstr,ipd.creation_date);
-    printf("Creation date:     %s\n",tmpstr);
-    ISOGETDATE(tmpstr,ipd.modification_date);
-    if (!NULLISODATE(ipd.modification_date)) 
+    if (verbose_mode||info_only) {
+      printf("ISO9660 image info:\n");
+      printf("Type:              %02xh\n",ipd.type[0]);  
+      ISOGETSTR(tmpstr,ipd.id,5);
+      printf("ID:                %s\n",tmpstr);
+      printf("Version:           %u\n",ipd.version[0]);
+      ISOGETSTR(tmpstr,ipd.system_id,32);
+      printf("System id:         %s\n",tmpstr);
+      ISOGETSTR(tmpstr,ipd.volume_id,32);
+      printf("Volume id:         %s\n",tmpstr);
+      ISOGETSTR(tmpstr,ipd.volume_set_id,128);
+      if (strlen(tmpstr)>0) printf("Volume set id:     %s\n",tmpstr);
+      ISOGETSTR(tmpstr,ipd.publisher_id,128);
+      if (strlen(tmpstr)>0) printf("Publisher id:      %s\n",tmpstr);
+      ISOGETSTR(tmpstr,ipd.preparer_id,128);
+      if (strlen(tmpstr)>0) printf("Preparer id:       %s\n",tmpstr);
+      ISOGETSTR(tmpstr,ipd.application_id,128);
+      if (strlen(tmpstr)>0) printf("Application id:    %s\n",tmpstr);
+      ISOGETDATE(tmpstr,ipd.creation_date);
+      printf("Creation date:     %s\n",tmpstr);
+      ISOGETDATE(tmpstr,ipd.modification_date);
+      if (!NULLISODATE(ipd.modification_date)) 
 	printf("Modification date: %s\n",tmpstr);
-    ISOGETDATE(tmpstr,ipd.expiration_date);
-    if (!NULLISODATE(ipd.expiration_date))
+      ISOGETDATE(tmpstr,ipd.expiration_date);
+      if (!NULLISODATE(ipd.expiration_date))
 	printf("Expiration date:   %s\n",tmpstr);
-    ISOGETDATE(tmpstr,ipd.effective_date);
-    if (!NULLISODATE(ipd.effective_date))
+      ISOGETDATE(tmpstr,ipd.effective_date);
+      if (!NULLISODATE(ipd.effective_date))
 	printf("Effective date:    %s\n",tmpstr);
-
-    printf("Image size:        %d blocks (%ld bytes)\n",
-	   ISONUM(ipd.volume_space_size),
-	   (long)ISONUM(ipd.volume_space_size)*BLOCKSIZE);
-    printf("Track size:        %d blocks (%ld bytes)\n",
-	   tracksize,
-	   (long)tracksize*BLOCKSIZE);
+      
+      printf("Image size:        %d blocks (%ld bytes)\n",
+	     ISONUM(ipd.volume_space_size),
+	     (long)ISONUM(ipd.volume_space_size)*BLOCKSIZE);
+      printf("Track size:        %d blocks (%ld bytes)\n",
+	     tracksize,
+	     (long)tracksize*BLOCKSIZE);
+    }
+  } else { 
+    /* if reading audio track */
+    imagesize=tracksize;
+    imagesize_bytes=imagesize*CDDA_DATASIZE;
+    buffersize = READBLOCKS*AUDIOBLOCKSIZE;
+    readblocksize = AUDIOBLOCKSIZE;
+    if (cdp) {
+      CDaddcallback(cdp, cd_audio, (CDCALLBACKFUNC)playaudio, 0);
+    } else die("No audioparser");
+    
+    fclose(outfile);
+    aiffsetup=AFnewfilesetup();
+    AFinitrate(aiffsetup,AF_DEFAULT_TRACK,44100.0); /* 44.1 kHz */
+    AFinitfilefmt(aiffsetup,file_format);           /* set file format */
+    AFinitchannels(aiffsetup,AF_DEFAULT_TRACK,2);   /* stereo */
+    AFinitsampfmt(aiffsetup,AF_DEFAULT_TRACK,
+		  AF_SAMPFMT_TWOSCOMP,16);          /* 16bit */
+    aiffoutfile=AFopenfile(argv[optind],"w",aiffsetup);
+    if (!aiffoutfile) die("Cannot open target file (%s).",argv[optind]);
   }
-
 
   /* read the image */
 
@@ -721,26 +853,39 @@ int main(int argc, char **argv)
 
     do {
       len=buffersize;
-      if(readsize/BLOCKSIZE+READBLOCKS>imagesize)
-	read_10(start+counter,imagesize-readsize/BLOCKSIZE,buffer,&len);
+      if(readsize/readblocksize+READBLOCKS>imagesize)
+	read_10(start+counter,imagesize-readsize/readblocksize,buffer,&len);
       else
 	read_10(start+counter,READBLOCKS,buffer,&len);
-      if ((counter%(1024*1024/BLOCKSIZE))<READBLOCKS) {
+      if ((counter%(1024*1024/readblocksize))<READBLOCKS) {
 	fprintf(stderr,"%3dM of %dM read.         \r",
 		counter/512,imagesize/512);
       }
       counter+=READBLOCKS;
       readsize+=len;
-      fwrite(buffer,len,1,outfile);
+      if (!audio_track) {
+	fwrite(buffer,len,1,outfile);
+      } else {
+	/* audio track */
+	for(i=0;i<(len/CDDA_BLOCKSIZE);i++) {
+	  CDparseframe(cdp,(CDFRAME*)&buffer[i*CDDA_BLOCKSIZE]);
+	}
+      }
       if (md5_mode) MD5Update(MD5,buffer,(readsize>imagesize_bytes?
 				       len-(readsize-imagesize_bytes):len) );
-    } while (len==BLOCKSIZE*READBLOCKS && readsize<imagesize*BLOCKSIZE);
+    } while (len==readblocksize*READBLOCKS&&readsize<imagesize*readblocksize);
     
     fprintf(stderr,"\n");
-    if (readsize > imagesize_bytes) ftruncate(fileno(outfile),imagesize_bytes);
-    if (readsize < imagesize_bytes) fprintf(stderr,"Image not complete!\n");
-    else fprintf(stderr,"Image complete.\n");
-    fclose(outfile);
+    if (!audio_track) {
+      if (readsize > imagesize_bytes) 
+	ftruncate(fileno(outfile),imagesize_bytes);
+      if (readsize < imagesize_bytes) 
+	fprintf(stderr,"Image not complete!\n");
+      else fprintf(stderr,"Image complete.\n");
+      fclose(outfile);
+    } else {
+      AFclosefile(aiffoutfile);
+    }
   }
 
   if (md5_mode) {

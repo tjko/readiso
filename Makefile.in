@@ -3,12 +3,12 @@
 # 
 # Makefile for readiso
 #
-Version = 1.1
+Version = 1.2
 PKGNAME = readiso
 
 SHELL = /bin/sh
 
-DEFS = @DEFS@ -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc0d3l0\"
+DEFS = @DEFS@ -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc0d4l0\"
 
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -34,7 +34,7 @@ CC        = @CC@
 XCPPFLAGS = @CPPFLAGS@
 CFLAGS    = @CFLAGS@ $(XCPPFLAGS) $(DEFS)
 LDFLAGS   = @LDFLAGS@
-LIBS      = @LIBS@
+LIBS      = @LIBS@ -lfpe -laudio -lcdaudio -laudiofile
 STRIP     = strip
 
 
