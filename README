@@ -1,0 +1,45 @@
+
+Readiso v0.2beta  Copyright (c)  Timo Kokkonen, 1997.
+
+
+REQUIREMENTS
+
+
+TESTED PLATFORMS
+	IRIX 5.3
+        (Linux support coming soon...any help on porting appreciated)
+
+TESTED DRIVES
+	should work on any scsi cd-rom (or cd-r) drive, but only
+	tested to work with:
+	   TOSHIBA XM-3301TA
+	   PINNACLE RCD-5040
+
+
+INSTALLATION
+	Installation should be very straightforward, just unpack the
+	tar file, make nesessary changes to the Makefile,  and then 
+        compile the program. You may wanna do something like this:
+
+		zcat readiso-0.2.tar.gz | tar xf -
+		cd readiso
+		make
+		make strip
+		make install
+
+
+HISTORY
+	v0.2   - first public release, still very beta...
+		 only support for SGI, Linux support not finished.
+	v0.1   - first working version
+
+
+LATEST VERSION
+
+	Latest version is always available from:
+		http://www.jyu.fi/~tjko/projects.html
+
+
+
+Timo <tjko@jyu.fi>
+10-Sep-1997

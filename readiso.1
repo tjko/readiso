@@ -1,0 +1,77 @@
+.TH READISO 1 "10 Feb 1997" 
+.UC 4 
+.SH NAME 
+readiso \- reads
+ISO9660 format cd-rom into image file
+
+.SH SYNOPSIS 
+.B readiso
+[ 
+.B options 
+] [ 
+.B imagename
+] 
+
+.SH DESCRIPTION 
+.I readiso
+is used to generate image file from the ISO9660 format cd, produced image
+file does not contain any extra headers, so it's ready to be writen
+back to blank disc using some writing software (like cdwrite). In Linux
+it's also possible to mount the image file 
+(eg. mount -t iso9960 -o loop,ro /foo/myimage.cd /mnt)
+
+
+.SH OPTIONS
+.PP
+Options are  the traditional POSIX one letter options.
+POSIX style options start with a single
+``\-''.
+
+Options offered by
+.I readiso
+are the following:
+.TP 0.6i
+.B -d<device>
+Specifies the scsi device to use (instead of the default device,
+which is specified during the compilation) 
+.TP 0.6i
+.B -h
+Displays short usage information and exits.
+.TP 0.6i
+.B -i
+Display only the disc TOC record and information about the ISO9660 image
+(no need to specify image file when using this option).
+.TP 0.6i
+.B -t<number>
+Reads specified track (default is to read first data track found).
+.TP 0.6i
+.B -v, --verbose
+Enables verbose mode (positively chatty).
+
+
+
+.SH BUGS
+No support for handling multisession discs.
+
+.SH "SEE ALSO" 
+cdwrite(1)
+
+.SH AUTHOR
+Timo Kokkonen (tjko@jyu.fi)
+
+.SH COPYING
+Copyright (C) 1997  Timo Kokkonen
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+ This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+ You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+
+
