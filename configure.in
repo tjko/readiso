@@ -31,7 +31,7 @@ case $host in
          ])
 	;;
 
-   *-irix-*)
+   *-sgi-irix*)
 	echo "You seem to be using Irix..."
 	AC_DEFINE(IRIX)
 	AC_DEFINE(DEFAULT_DEV,"/dev/scsi/sc0d4l0")
@@ -41,14 +41,14 @@ case $host in
            echo "Cannot find libds (generic user mode SCSI driver lib)."
            exit 1
           ])
-        AC_CHECK_HEADERS(dslib.h,,[
-           echo "Cannot find dslib.h  You need libds."
+        AC_CHECK_HEADERS(dslib.h, ,[
+           echo "Cannot find <dslib.h>  You need libds headers."
            exit 1
           ])
 	LIBS="$LIBS -lfpe -laudio -lcdaudio -laudiofile"
 	;;
    *)
-	echo "You seem to be using unsupported os..."
+	echo "You seem to be using unsupported os...$host"
 	echo "(feel free to add support for your OS :)"
 	exit 1
    ;;
