@@ -9,7 +9,7 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "v1.1beta"
+#define VERSION "v1.1"
 #define PRGNAME "readiso"
 
 #include <stdio.h>
