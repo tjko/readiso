@@ -1,7 +1,7 @@
 /* readiso.c -- program to read ISO9660 image from (scsi) cd-rom
  * $Id$
  *
- * copyright (c) 1997  Timo Kokkonen <tjko@jyu.fi>
+ * Copyright (c) 1997-1998  Timo Kokkonen <tjko@iki.fi>
  *
  * 
  * This file may be copied under the terms and conditions 
@@ -13,6 +13,11 @@
 #define PRGNAME "readiso"
 
 #include <stdio.h>
+#if HAVE_GETOPT_H && HAVE_GETOPT_LONG
+#include <getopt.h>
+#else
+#include "getopt.h"
+#endif
 #include <stdlib.h>
 #include <stdarg.h>
 #include <fcntl.h>
@@ -28,8 +33,8 @@
 #include <limits.h>
 #include <string.h>
 
-#include "md5/global.h"
-#include "md5/md5.h"
+#include "config.h"
+#include "md5.h"
 
 
 #ifdef SGI
@@ -60,6 +65,10 @@
 #endif
 
 #define BLOCKSIZE      2048  /* (read) block size */
+
+#define MAX_DIFF_ALLOWED  512  /* how many blocks image size can be smaller
+                                  than track size, before we override image
+				  size with track size */
 
 
 /* scsi commands used by the program */
@@ -169,6 +178,18 @@ int fd;    /* file descriptor of the scsi device open */
 static char rcsid[] = "$Id$";
 int verbose_mode = 0;
 
+static struct option long_options[] = {
+  {"verbose",0,0,'v'},
+  {"help",0,0,'h'},
+  {"info",0,0,'i'},
+  {"device",1,0,'d'},
+  {"track",1,0,'t'},
+  {"force",1,0,'f'},
+  {"md5",1,0,'m'},
+  {"MD5",1,0,'M'},
+  {"copy",1,0,'c'}
+};
+
 
 /************************************************************************/
 
@@ -212,26 +233,25 @@ void die(char *format, ...)
 
 void p_usage(void) 
 {
-  fprintf(stderr, PRGNAME " " VERSION 
-	  "  Copyright (c) Timo Kokkonen, 1997-1998.\n"); 
+  fprintf(stderr, PRGNAME " " VERSION "  " HOST_TYPE "   "
+	  "Copyright (c) Timo Kokkonen, 1997-1998.\n"); 
 
   fprintf(stderr,
 	  "Usage: " PRGNAME " [options] <imagefile>\n\n"
-	  "  -d<device>      specifies the scsi device to use "
-	  "(default: " DEFAULT_DEV ")\n"
-	  "  -h              display this help and exit\n"
-	  "  -i              only display TOC record and ISO9660 image info\n"
-	  "  -t<number>      reads specified track (default is first data "
-	  "track found)\n"
-	  "  -v              verbose mode\n"
-	  "  -c<lba,n>       dumb 'n' sectors from cd, starting from 'lba'\n"
-          "  -m              calculate MD5 checksum for imagefile\n"
-	  "  -M              calculate MD5 checksum for disc (don't create\n"
+	  "  -d<device>, --device=<device>\n"
+          "                  specifies the scsi device to use (default: " DEFAULT_DEV ")\n"
+	  "  -h, --help      display this help and exit\n"
+	  "  -i, --info      only display TOC record and ISO9660 image info\n"
+	  "  -v, --verbose   verbose mode\n"
+          "  -m, --md5       calculate MD5 checksum for imagefile\n"
+	  "  -M, --MD5       calculate MD5 checksum for disc (don't create\n"
 	  "                  image file).\n"
-	  "  -f<mode>        Force program to trust blindly either ISO primary\n"
+	  "  --dump=<lba,n>  dumb (copy) 'n' sectors from cd, starting from 'lba'\n"
+	  "  --force=<mode>  force program to trust blindly either ISO primary\n"
 	  "                  descriptor or TOC record for the size of image.\n"
           "                  mode = 1 (trust ISO primary descriptor)\n"
 	  "                         2 (trust TOC record)\n"
+	  "  --track=<n>     reads specified track (default is first data track found)\n"
 	  "\n");
 
   exit(1);
@@ -451,7 +471,7 @@ int main(int argc, char **argv)
   int info_only = 0;
   unsigned char *buffer;
   int buffersize = READBLOCKS*BLOCKSIZE;
-  int start,stop,imagesize;
+  int start,stop,imagesize,tracksize;
   int counter = 0;
   long readsize = 0;
   long imagesize_bytes;
@@ -462,6 +482,7 @@ int main(int argc, char **argv)
   MD5_CTX *MD5; 
   char digest[16],digest_text[33];
   int md5_mode = 0;
+  int opt_index = 0;
 #ifdef LINUX
   int fd;
   char *s;
@@ -476,13 +497,14 @@ int main(int argc, char **argv)
   buffer=(unsigned char*)malloc(READBLOCKS*BLOCKSIZE);
   if (!buffer || !MD5) die("No memory");
 
-  if (argc<2) die("parameters missing\n"
-	          "Try '%s -h' for more information.\n",PRGNAME);
+  if (argc<2) die("parameter(s) missing\n"
+	          "Try '%s --help' for more information.\n",PRGNAME);
 
  
   /* parse command line parameters */
   while(1) {
-    if ((c=getopt(argc,argv,"Mmvhid:t:c:f:"))==-1) break;
+    if ((c=getopt_long(argc,argv,"Mmvhid:",long_options,&opt_index))
+	== -1) break;
     switch (c) {
     case 'v':
       verbose_mode=1;
@@ -506,7 +528,9 @@ int main(int argc, char **argv)
       break;
     case 'f':
       if (sscanf(optarg,"%d",&force_mode)!=1) die("invalid parameters");
-      if (force_mode<0 || force_mode >2) force_mode=0;
+      if (force_mode<1 || force_mode >2) {
+	die("invalid parameters");
+      }
       break;
     case 'm':
       md5_mode=1;
@@ -608,6 +632,7 @@ int main(int argc, char **argv)
 
   start=V4(&reply[(trackno-1)*8+4+4]);
   stop=V4(&reply[(trackno)*8+4+4]);
+  tracksize=abs(stop-start);
   /* if (verbose_mode) printf("Start LBA=%d\nStop  LBA=%d\n",start,stop); */
 
   len=buffersize;
@@ -623,25 +648,28 @@ int main(int argc, char **argv)
 
   imagesize=ISONUM(ipd.volume_space_size);
 
-  /* we should check here if we really got a valid primary descriptor */
-  if ( (imagesize>(stop-start)) || (imagesize<1) ) 
-    die("invalid ISO primary descriptor.");
+  /* we should really check here if we really got a valid primary descriptor */
+  if ( (imagesize>(stop-start)) || (imagesize<1) ) {
+    fprintf(stderr,"\aInvalid ISO primary descriptor!!!\n");
+    if (!info_only) fprintf(stderr,"Copying entire track to image file.\n");
+    force_mode=2;
+  }
 
-
-  if (force_mode==1) {} /* use size from primary descriptor */
-  else if (force_mode==2) imagesize=(stop-start); /* use size from TOC */
+  if (force_mode==1) {} /* use size from ISO primary descriptor */
+  else if (force_mode==2) imagesize=tracksize; /* use size from TOC */
   else {
-    if (imagesize + 64 < (stop-start)) {
+    if (  ( (tracksize-imagesize) > MAX_DIFF_ALLOWED ) || 
+	  ( imagesize > tracksize )  )   {
       fprintf(stderr,"ISO primary descriptor has suspicious volume size"
 	             " (%d blocks)\n",imagesize);
-      imagesize=(stop-start);
+      imagesize=tracksize;
       fprintf(stderr,"Using track size from TOC record (%d blocks) instead.\n",
 	      imagesize);
       fprintf(stderr,"(option -f can be used to override this behaviour.)\n");
     }
   }
 
-  imagesize_bytes=imagesize*2048;
+  imagesize_bytes=imagesize*BLOCKSIZE;
     
 
   if (verbose_mode||info_only) {
@@ -674,8 +702,12 @@ int main(int argc, char **argv)
     if (!NULLISODATE(ipd.effective_date))
 	printf("Effective date:    %s\n",tmpstr);
 
-    printf("Size:              %d blocks (%ld bytes)\n",imagesize,
-	   imagesize_bytes);
+    printf("Image size:        %d blocks (%ld bytes)\n",
+	   ISONUM(ipd.volume_space_size),
+	   (long)ISONUM(ipd.volume_space_size)*BLOCKSIZE);
+    printf("Track size:        %d blocks (%ld bytes)\n",
+	   tracksize,
+	   (long)tracksize*BLOCKSIZE);
   }
 
 
@@ -702,7 +734,7 @@ int main(int argc, char **argv)
       fwrite(buffer,len,1,outfile);
       if (md5_mode) MD5Update(MD5,buffer,(readsize>imagesize_bytes?
 				       len-(readsize-imagesize_bytes):len) );
-    } while (len==BLOCKSIZE*READBLOCKS && readsize<imagesize*2048);
+    } while (len==BLOCKSIZE*READBLOCKS && readsize<imagesize*BLOCKSIZE);
     
     fprintf(stderr,"\n");
     if (readsize > imagesize_bytes) ftruncate(fileno(outfile),imagesize_bytes);
