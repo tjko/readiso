@@ -1,4 +1,5 @@
 /* readiso.c -- program to read ISO9660 image from (scsi) cd-rom
+ * $Id$
  *
  * copyright (c) 1997  Timo Kokkonen <tjko@jyu.fi>
  *
@@ -8,7 +9,7 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "0.5beta"
+#define VERSION "v1.0"
 #define PRGNAME "readiso"
 
 #include <stdio.h>
@@ -165,6 +166,7 @@ struct sg_reply {
 int fd;    /* file descriptor of the scsi device open */
 #endif
 
+static char rcsid[] = "$Id$";
 int verbose_mode = 0;
 
 
@@ -435,12 +437,11 @@ int mode_select(int bsize)
 /************************************************************************/
 int main(int argc, char **argv) 
 {
-  FILE *outfile;
+  FILE *outfile=NULL;
   iso_primary_descriptor_type  ipd;
-  int fd;
   char *dev = default_dev;
   char vendor[9],model[17],rev[5];
-  char reply[1024],tmpstr[255], *s;
+  char reply[1024],tmpstr[255];
   int replylen=sizeof(reply);
   int trackno = 0;
   int info_only = 0;
@@ -456,9 +457,15 @@ int main(int argc, char **argv)
   MD5_CTX *MD5; 
   char digest[16],digest_text[33];
   int md5_mode = 0;
+#ifdef LINUX
+  int fd;
+  char *s;
+#endif
 
   int i,c,o;
   unsigned int len;
+
+  if (rcsid); 
 
   MD5 = malloc(sizeof(MD5_CTX));
   buffer=(unsigned char*)malloc(READBLOCKS*BLOCKSIZE);
@@ -642,7 +649,7 @@ int main(int argc, char **argv)
     if (!NULLISODATE(ipd.effective_date))
 	printf("Effective date:    %s\n",tmpstr);
 
-    printf("Size:              %d blocks (%d bytes)\n",imagesize,
+    printf("Size:              %d blocks (%ld bytes)\n",imagesize,
 	   imagesize_bytes);
   }
 
@@ -652,7 +659,7 @@ int main(int argc, char **argv)
   if (md5_mode) MD5Init(MD5);
 
   if (!info_only) {
-    fprintf(stderr,"Reading the ISO9660 image (%dMb)...\n",
+    fprintf(stderr,"Reading the ISO9660 image (%ldMb)...\n",
 	    imagesize_bytes/(1024*1024));
 
     do {

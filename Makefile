@@ -1,9 +1,10 @@
 #########################################################################
+# $Id$
 #
 # Makefile for readiso for *nix environments
+# 
 #
-#
-Version = 0.5beta
+Version = 1.0
 PKGNAME = readiso
 
 # Compile Options:
@@ -18,13 +19,13 @@ MANDIR  = $(PREFIX)/man/man1
 USER	= root
 GROUP	= root
 
-# if necessary define where jpeglib and it's headers are located
+# if necessary define where libraries/includes are...
 LIBDIR  = # -L/usr/local/lib
 INCDIR  = # -I/usr/src/linux/include/scsi
 
 
 CC     = gcc 
-CFLAGS = -O2 $(DEFINES) $(INCDIR)  # -N
+CFLAGS = -O2 -Wall $(DEFINES) $(INCDIR)  # -N
 LIBS   = -lds $(LIBDIR)
 STRIP  = strip
 
@@ -70,4 +71,5 @@ install.man:
 love:	
 	@echo "Not War - Eh?"
 # eof
+
 
