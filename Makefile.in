@@ -8,7 +8,7 @@ PKGNAME = readiso
 
 SHELL = /bin/sh
 
-DEFS = @DEFS@ -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc0d4l0\"
+DEFS = @DEFS@ # -DIRIX -DDEFAULT_DEV=\"/dev/scsi/sc0d4l0\"
 
 srcdir = @srcdir@
 VPATH = @srcdir@
@@ -34,7 +34,7 @@ CC        = @CC@
 XCPPFLAGS = @CPPFLAGS@
 CFLAGS    = @CFLAGS@ $(XCPPFLAGS) $(DEFS)
 LDFLAGS   = @LDFLAGS@
-LIBS      = @LIBS@ -lfpe -laudio -lcdaudio -laudiofile
+LIBS      = @LIBS@ # -lfpe -laudio -lcdaudio -laudiofile
 STRIP     = strip
 
 
@@ -50,7 +50,7 @@ INSTALL_PROGRAM = @INSTALL_PROGRAM@
 DIRNAME = $(shell basename `pwd`) 
 DISTNAME  = $(PKGNAME)-$(Version)
 
-OBJS = $(PKGNAME).o @GNUGETOPT@ md5.o 
+OBJS = $(PKGNAME).o @GNUGETOPT@ md5.o @ARCHOBJS@
 
 $(PKGNAME):	$(OBJS) 
 	$(CC) $(CFLAGS) -o $(PKGNAME) $(OBJS) $(LDFLAGS) $(LIBS) 

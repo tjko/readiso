@@ -1,11 +1,19 @@
-/* config.h.in. 
- * $Id$
- *
- */
-
+/* config.h.in.  Generated automatically from configure.in by autoheader.  */
 
 /* Define if you have the ANSI C header files.  */
 #undef STDC_HEADERS
+
+/* host type */
+#undef HOST_TYPE
+
+/* compiling under Linux? */
+#undef LINUX
+
+/* compiling under Irix? */
+#undef IRIX
+
+/* default SCSI device */
+#undef DEFAULT_DEV
 
 /* The number of bytes in a int.  */
 #undef SIZEOF_INT
@@ -16,8 +24,14 @@
 /* Define if you have the getopt_long function.  */
 #undef HAVE_GETOPT_LONG
 
+/* Define if you have the <dslib.h> header file.  */
+#undef HAVE_DSLIB_H
+
 /* Define if you have the <getopt.h> header file.  */
 #undef HAVE_GETOPT_H
+
+/* Define if you have the <scsi/sg.h> header file.  */
+#undef HAVE_SCSI_SG_H
 
 /* Define if you have the <string.h> header file.  */
 #undef HAVE_STRING_H
@@ -25,10 +39,5 @@
 /* Define if you have the <unistd.h> header file.  */
 #undef HAVE_UNISTD_H
 
-/* Define if you have the libds library (-lds).  */
+/* Define if you have the ds library (-lds).  */
 #undef HAVE_LIBDS
-
-
-
-#undef HOST_TYPE
-

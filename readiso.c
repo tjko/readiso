@@ -9,8 +9,8 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "v1.2.1"
-#define PRGNAME "readiso"
+
+#include "config.h"
 
 #include <stdio.h>
 #if HAVE_GETOPT_H && HAVE_GETOPT_LONG
@@ -34,165 +34,29 @@
 #include <limits.h>
 #include <string.h>
 
+#ifdef IRIX
 #include <sigfpe.h>
 #include <dmedia/cdaudio.h>
 #include <dmedia/audio.h>
 #include <dmedia/audiofile.h>
-
-#include "config.h"
-#include "md5.h"
-
-
-#ifdef SGI
-#include <dslib.h>
 #include <signal.h>
 #endif
 
-#ifdef LINUX
-#include <linux/version.h>
-#include <scsi.h>
-#include <sg.h>
-#endif
+#include "md5.h"
+#include "readiso.h"
 
 
 /* debug macro to print buffer in hex */
 #define PRINT_BUF(x,n) { int i; for(i=0;i<n;i++) printf("%02x ",(unsigned char*)x[i]); printf("\n"); fflush(stdout); }
 
-/* macros for building MSF values from LBA */
-#define LBA_MIN(x) ((x)/(60*75))
-#define LBA_SEC(x) (((x)%(60*75))/75)
-#define LBA_FRM(x) ((x)%75)
-
-
-/* mode definitions for scsi_request() function */
-#define SCSIR_READ     0x01
-#define SCSIR_WRITE    0x02
-#define SCSIR_QUIET    0x10
-
-#ifdef SGI
-#define READBLOCKS     64    /* no of blocks to read at a time */
-#else
-#define READBLOCKS     1
-#endif
-
-#define BLOCKSIZE      2048  /* data block size */
-#define AUDIOBLOCKSIZE 2368  /* cdda (2352) + subcode-q (16) */
-
-#define MAX_DIFF_ALLOWED  512  /* how many blocks image size can be smaller
-                                  than track size, before we override image
-				  size with track size */
-
-#define DATA_TRACK   0x04
-
-/* scsi commands used by the program */
-#define TESTREADY   0x00
-#define INQUIRY     0x12
-#define MODESENSE   0x1A
-#define STOPUNIT    0x1B
-#define REMOVAL     0x1E
-#define READ10      0x28
-#define READTOC     0x43
-
-#ifndef SGI
-/* macros for building byte array from number */
-#define B(s,i) ((unsigned char)((s) >> i))
-#define B1(s) ((unsigned char)(s))
-#define B2(s) B((s),8), B1(s)
-#define B3(s) B((s),16), B((s),8), B1(s)
-#define B4(s) B((s),24), B((s),16), B((s),8), B1(s)
-
-/* macros for converting array of bytes to binary  */
-#define V1(s) (s)[0]
-#define V2(s) (((s)[0] << 8) | (s)[1])
-#define V3(s) (((((s)[0] << 8) | (s)[1]) << 8) | (s)[2])
-#define V4(s) (((((((s)[0] << 8) | (s)[1]) << 8) | (s)[2]) << 8) | (s)[3])
-#endif
-
-
-#define ISODCL(from, to) (to - from + 1)
-#define ISONUM(n) ( ((n)[0]&0xff) | (((n)[1]&0xff)<<8) | (((n)[2]&0xff)<<16) \
-                    | (((n)[3]&0xff)<<24) )
-
-#define ISOGETSTR(t,s,l) { char *r=((t)+(int)((l)-1)); memcpy((t),(s),(l)); \
-		    	   while (*r==' '&&r>=(t)) r--;  *(r+1)=0; }
-#define ISOGETDATE(t,s)  sprintf((t),"%c%c.%c%c.%c%c%c%c %c%c:%c%c:%c%c",\
-				   s[6],s[7],s[4],s[5],s[0],s[1],s[2],s[3],\
-				   s[8],s[9],s[10],s[11],s[12],s[13]); 
-#define NULLISODATE(s)  (s[0]==s[1]&&s[1]==s[2]&&s[2]==s[3]&&s[3]==s[4]&& \
-			 s[4]==s[5]&&s[5]==s[6]&&s[6]==s[7]&&s[7]==s[8])
-
-
-/* ISO9660 primary descriptor definition */
-typedef struct iso_primary_descriptor_type_ {
-  unsigned char type			[ISODCL (  1,   1)]; /* 711 */
-  unsigned char id			[ISODCL (  2,   6)];
-  unsigned char version			[ISODCL (  7,   7)]; /* 711 */
-  unsigned char unused1			[ISODCL (  8,   8)];
-  unsigned char system_id		[ISODCL (  9,  40)]; /* aunsigned 
-								chars */
-  unsigned char volume_id		[ISODCL ( 41,  72)]; /* dunsigned 
-								chars */
-  unsigned char unused2			[ISODCL ( 73,  80)];
-  unsigned char volume_space_size	[ISODCL ( 81,  88)]; /* 733 */
-  unsigned char unused3			[ISODCL ( 89, 120)];
-  unsigned char volume_set_size		[ISODCL (121, 124)]; /* 723 */
-  unsigned char volume_sequence_number	[ISODCL (125, 128)]; /* 723 */
-  unsigned char logical_block_size	[ISODCL (129, 132)]; /* 723 */
-  unsigned char path_table_size		[ISODCL (133, 140)]; /* 733 */
-  unsigned char type_l_path_table	[ISODCL (141, 144)]; /* 731 */
-  unsigned char opt_type_l_path_table	[ISODCL (145, 148)]; /* 731 */
-  unsigned char type_m_path_table	[ISODCL (149, 152)]; /* 732 */
-  unsigned char opt_type_m_path_table	[ISODCL (153, 156)]; /* 732 */
-  unsigned char root_directory_record	[ISODCL (157, 190)]; /* 9.1 */
-  unsigned char volume_set_id	        [ISODCL (191, 318)]; /* dunsigned 
-								chars*/
-  unsigned char publisher_id		[ISODCL (319, 446)]; /* achars */
-  unsigned char preparer_id		[ISODCL (447, 574)]; /* achars */
-  unsigned char application_id		[ISODCL (575, 702)]; /* achars */
-  unsigned char copyright_file_id	[ISODCL (703, 739)]; /* 7.5 dchars */
-  unsigned char abstract_file_id	[ISODCL (740, 776)]; /* 7.5 dchars */
-  unsigned char bibliographic_file_id	[ISODCL (777, 813)]; /* 7.5 dchars */
-  unsigned char creation_date		[ISODCL (814, 830)]; /* 8.4.26.1 */
-  unsigned char modification_date	[ISODCL (831, 847)]; /* 8.4.26.1 */
-  unsigned char expiration_date		[ISODCL (848, 864)]; /* 8.4.26.1 */
-  unsigned char effective_date		[ISODCL (865, 881)]; /* 8.4.26.1 */
-  unsigned char file_structure_version	[ISODCL (882, 882)]; /* 711 */
-  unsigned char unused4			[ISODCL (883, 883)];
-  unsigned char application_data	[ISODCL (884, 1395)];
-  unsigned char unused5			[ISODCL (1396, 2048)];
-} iso_primary_descriptor_type;
-
-
+#ifdef IRIX
 static ALport audioport;
 static ALconfig audioconf;
 static AFfilehandle aiffoutfile;
 static AFfilesetup aiffsetup;
-
-
-#ifndef DEFAULT_DEV
-#define DEFAULT_DEV "/dev/cdrom"
 #endif
+
 char *default_dev = DEFAULT_DEV;
-
-#ifdef SGI
-static struct dsreq *dsp;   /* handle to scsi device */
-#endif
-
-#ifdef LINUX
-#define FUDGE          10    
-struct sg_request {
-  struct sg_header header;
-  unsigned char bytes[READBLOCKS*BLOCKSIZE+FUDGE];
-} sg_request;
-
-struct sg_reply {
-  struct sg_header header;
-  unsigned char bytes[100+READBLOCKS*BLOCKSIZE];
-};
-
-int fd;    /* file descriptor of the scsi device open */
-#endif
-
 static char rcsid[] = "$Id$";
 static int verbose_mode = 0;
 static int dump_mode = 0;
@@ -209,11 +73,14 @@ static struct option long_options[] = {
   {"md5",0,0,'m'},
   {"MD5",0,0,'M'},
   {"dump",1,0,'c'},
+#ifdef IRIX
   {"dumpaudio",1,0,'C'},
   {"aiff",0,0,'a'},
   {"aiffc",0,0,'A'},
   {"sound",0,0,'s'},
+#endif
   {"version",0,0,'V'},
+  {"scanbus",0,0,'S'},
   {NULL,0,0,0}
 };
 
@@ -290,13 +157,15 @@ void p_usage(void)
           "                  mode = 1 (trust ISO primary descriptor)\n"
 	  "                         2 (trust TOC record)\n"
 	  "  --track=<n>     reads specified track (default is first data track found)\n"
+	  "  --scanbus       scan SCSI bus and exit\n"
 	  "  --version       display program version and exit\n"
+#ifdef IRIX
 	  " CD-DA parameters:\n"
 	  "  --dumpaudio=<lba,n>\n"
 	  "                  dump raw audio sectors with subcode-q data\n"
 	  "  --aiff          select AIFF as output file format\n"
 	  "  --aiffc         select AIFF-C as output file format\n"
-	  
+#endif	  
 
 	  "\n");
 
@@ -304,94 +173,6 @@ void p_usage(void)
 }
 
 
-int scsi_request(char *note, unsigned char *reply, int *replylen, 
-		 int cmdlen, int datalen, int mode, ...)
-{
-#ifdef SGI
-/* Irix... */
-  va_list args;
-  int result,i;
-  unsigned char *buf,*databuf;
-
-  buf=(unsigned char*)CMDBUF(dsp);
-  databuf=(unsigned char*)malloc(datalen);
-
-  va_start(args,mode);
-  for (i=0;i<cmdlen;i++) buf[i]=va_arg(args,unsigned int);
-  for (i=0;i<datalen;i++) databuf[i]=va_arg(args,unsigned int);
-  va_end(args);
-
-  CMDBUF(dsp)=(caddr_t)buf;
-  CMDLEN(dsp)=cmdlen;
-  
-  if (mode&SCSIR_READ) 
-    filldsreq(dsp,reply,*replylen,DSRQ_READ|DSRQ_SENSE);
-  else filldsreq(dsp,databuf,datalen,DSRQ_WRITE|DSRQ_SENSE);
-  dsp->ds_time = 15*1000;
-  result = doscsireq(getfd(dsp),dsp);
-
-  if (RET(dsp) && RET(dsp) != DSRT_SHORT && !(mode&SCSIR_QUIET)) {
-    fprintf(stderr,"%s status=%d ret=%xh sensesent=%d datasent=%d "
-	    "senselen=%d\n", note, STATUS(dsp), RET(dsp),
-	    SENSESENT(dsp), DATASENT(dsp), SENSELEN(dsp));
-
-  }
-
-  if (mode==SCSIR_READ) { *replylen=DATASENT(dsp); } 
-
-
-  free(databuf);
-
-  return result;
-
-#else 
-/* Linux... */
-
-  va_list args;
-  struct sg_request sg_request;
-  struct sg_reply sg_reply;
-  int result,i,size,wasread;
-  static int pack_id=0;
-
-  memset(&sg_request,0,sizeof(sg_request));
-  sg_request.header.pack_len=sizeof(struct sg_header) + 10;
-  sg_request.header.reply_len=*replylen + sizeof(struct sg_header);
-  sg_request.header.pack_id=pack_id++;
-  sg_request.header.result=0;
-  
-  size=sizeof(struct sg_header)+cmdlen+datalen;
-
-  va_start(args,mode);
-  for (i=0;i<(cmdlen+datalen);i++) 
-    sg_request.bytes[i]=va_arg(args,unsigned int);
-  va_end(args);
-  
-  result = write(fd,&sg_request, size);
-  if (result<0) {
-    fprintf(stderr,"%s write error %d\n",note,result);
-    return result;
-  }
-  else if (result!=size) {
-    fprintf(stderr,"%s wrote only %dbytes of expected %dbytes\n",note,
-	    result,size);
-    return 2;
-  }
-  
-  wasread=read(fd,&sg_reply,sizeof(struct sg_reply));
-  if (wasread > sizeof(struct sg_header)) {
-    *replylen=wasread-sizeof(struct sg_header);
-    memcpy(reply,sg_reply.bytes,*replylen);
-  }
-  else *replylen=0;
-
-  if (!(mode&SCSIR_QUIET) {
-    fprintf(stderr,"%s status=%d result=%d\n",wasread,sg_reply.header.result);
-  }
-
-  return sg_reply.header.result;
-
-#endif
-}
 
 
 int inquiry(char *manufacturer, char *model, char *revision) {
@@ -405,7 +186,7 @@ int inquiry(char *manufacturer, char *model, char *revision) {
 			INQUIRY, /* 0 */
 			0,0,0,255,0);
 
-  if (result) return result;
+  if (result) return -1;
 
   for(i=35;i>32;i--) if(bytes[i]!=' ') break;
   bytes[i+1]=0;
@@ -419,15 +200,66 @@ int inquiry(char *manufacturer, char *model, char *revision) {
   bytes[i+1]=0;
   strncpy(manufacturer,(const char*)&bytes[8],9);
 
-  return result;
+  return bytes[0];
 }
 
 
 int mode_sense(unsigned char *buf, int *buflen)
 {
-  return scsi_request("mode_sense",buf,buflen,6,0,SCSIR_READ,
-		      MODESENSE,0,0,0,0x0c,0);
+  int len = *buflen;
+  if (len >255) len=255;
+  return scsi_request("mode_sense(6)",buf,buflen,6,0,SCSIR_READ|SCSIR_QUIET,
+		      MODESENSE,0,0x01,0,len,0);
 }
+
+int mode_sense10(unsigned char *buf, int *buflen)
+{
+  int len = *buflen;
+  if (len >65000) len=65000;
+  return scsi_request("mode_sense(10)",buf,buflen,10,0,SCSIR_READ,
+		      MODESENSE10,0,0x01,0,0,0,0,B2(len),0);
+}
+
+int read_capacity(int *lba, int *bsize)
+{
+  char buf[256];
+  int r,len = 255;
+  if (!lba || !bsize) return -1;
+
+  
+  r = scsi_request("read_capacity",buf,&len,10,0,SCSIR_READ,
+		   READCAPACITY,0,B4(0),0,0,0x00,0);
+
+  if (r) return r;
+  *lba=V4(&buf[0]);
+  *bsize=V4(&buf[4]);
+  /* fprintf(stderr,"readcapacity: lba=%d bsize=%d\n",*lba,*bsize); */
+  return 0;
+}
+
+int get_block_size()
+{
+  char buf[255];
+  int len,lba=0,bsize=0;
+
+  read_capacity(&lba,&bsize);
+
+  len=255;
+  if (mode_sense(buf,&len)==0 && buf[3]>=8) {
+    return V3(&buf[4+5]);
+  }
+
+  if (mode_sense10(buf,&len)==0 && V2(&buf[6])>=8) {
+    return V3(&buf[8+5]);
+  }
+
+  if (read_capacity(&lba,&bsize)==0) {
+    return bsize;
+  }
+
+  return -1;
+}
+
 
 
 int start_stop(int start)
@@ -497,20 +329,78 @@ int read_10(int lba, int len, unsigned char *buf, int *buflen)
 int mode_select(int bsize, int density)
 {
   return scsi_request("mode_select",0,0,6,12,SCSIR_WRITE,
-		     0x15,0x10,0,0,12,0,
+		     MODESELECT,0x10,0,0,12,0,
 		     0,0,0,8,
 		     density,B3(0),0,B3(bsize) );
 }
 
+void scan_bus()
+{
+  char vendor[9],model[17],rev[5];
+  char d[1024];
+  int bus,dev,type;
+  
+  int firstbus,lastbus;
+  int firstdev,lastdev;
+
+  firstbus=0;
+  firstdev=0;
+  lastbus=0;
+  lastdev=0;
+
+#ifdef LINUX
+  lastdev=16;
+#endif
+#ifdef IRIX
+  lastdev=15;
+  lastbus=1;
+#endif
+
+  printf("Device                   Manufacturer  Model              Revision\n"
+	 "-----------------------  ------------- ------------------ --------\n"
+	 );
+
+  for (bus=firstbus;bus<=lastbus;bus++) {
+
+    for (dev=firstdev;dev<=lastdev;dev++) {
+#ifdef LINUX
+      snprintf(d,1024,"/dev/sg%c",'a'+dev);
+#else
+      snprintf(d,1024,"/dev/scsi/sc%dd%dl0",bus,dev);
+#endif
+      /* fprintf(stderr,"try: '%s'\n",d); */
+
+      if (scsi_open(d)==0) {
+	if ((type=inquiry(vendor,model,rev))>=0) {
+	  type=type&0x1f;
+	  printf("%-23s  %-13s %-18s %-8s %s\n",d,vendor,model,rev,
+		 (type==0x5?"[CD-ROM]":""));
+	}
+	scsi_close();
+      }
+
+    }
+
+  }
+    
+    
+}
+
+
+#ifdef SGI
 void playaudio(void *arg, CDDATATYPES type, short *audio)
 {
   if (audio_mode) ALwritesamps(audioport, audio, CDDA_NUMSAMPLES);
   if (!dump_mode) AFwriteframes(aiffoutfile,AF_DEFAULT_TRACK,audio,
 				CDDA_NUMSAMPLES/2);
 }
+#endif
+
+
 
 
 /************************************************************************/
+
 int main(int argc, char **argv) 
 {
   iso_primary_descriptor_type  ipd;
@@ -523,12 +413,13 @@ int main(int argc, char **argv)
   int info_only = 0;
   unsigned char *buffer;
   int buffersize = READBLOCKS*BLOCKSIZE;
-  int start,stop,imagesize,tracksize;
+  int start,stop,imagesize=0,tracksize=0;
   int counter = 0;
   long readsize = 0;
-  long imagesize_bytes;
+  long imagesize_bytes = 0;
   int drive_block_size, init_bsize;
   int force_mode = 0;
+  int scanbus_mode = 0;
   int dump_start, dump_count;
   MD5_CTX *MD5; 
   char digest[16],digest_text[33];
@@ -537,14 +428,11 @@ int main(int argc, char **argv)
   int audio_track = 0;
   int readblocksize = BLOCKSIZE;
   int file_format = AF_FILE_AIFFC;
-#ifdef LINUX
-  int fd;
-  char *s;
-#endif
+#ifdef IRIX
   CDPARSER *cdp = CDcreateparser();
   CDFRAME  cdframe;
-
-
+#endif
+  int dev_type;
   int i,c,o;
   int len;
 
@@ -560,7 +448,7 @@ int main(int argc, char **argv)
  
   /* parse command line parameters */
   while(1) {
-    if ((c=getopt_long(argc,argv,"Mmvhid:",long_options,&opt_index))
+    if ((c=getopt_long(argc,argv,"SMmvhid:",long_options,&opt_index))
 	== -1) break;
     switch (c) {
     case 'a':
@@ -589,11 +477,13 @@ int main(int argc, char **argv)
 	die("invalid parameters");
       dump_mode=1;
       break;
+#ifdef IRIX
     case 'C':
       if (sscanf(optarg,"%d,%d",&dump_start,&dump_count)!=2)
 	die("invalid parameters");
       dump_mode=2;
       break;
+#endif
     case 'f':
       if (sscanf(optarg,"%d",&force_mode)!=1) die("invalid parameters");
       if (force_mode<1 || force_mode >2) {
@@ -608,6 +498,9 @@ int main(int argc, char **argv)
       break;
     case 's':
       audio_mode=1;
+      break;
+    case 'S':
+      scanbus_mode=1;
       break;
     case 'V':
       printf(PRGNAME " "  VERSION "  " HOST_TYPE
@@ -634,72 +527,106 @@ int main(int argc, char **argv)
     }
   }
 
-  /* open the scsi device */
-#ifdef SGI  
-  dsp=dsopen(dev, O_RDWR);
-  if (!dsp)  die("error opening scsi device '%s'",dev); 
-#endif
-#ifdef LINUX
-  fd=open(dev,O_RDWR);
-  if (fd<0) die("error opening scsi device '%s'",dev);
-  i=fcntl(fd,F_GETFL);
-  fcntl(fd,F_SETFL,i|O_NONBLOCK);
-  while(read(fd,reply,sizeof(reply))!=-1 || errno!=EAGAIN); /* empty buffer */
-  fcntl(fd,F_SETFL,i&~O_NONBLOCK);
-#endif
-
-  memset(reply,0,sizeof(reply));
-
-
-  if (inquiry(vendor,model,rev)!=0) die("error accessing scsi device");
-
   printf("readiso(9660) " VERSION "\n");
+
+  /* open the scsi device */
+  if (scsi_open(dev)) die("error opening scsi device '%s'",dev); 
+
+  if (scanbus_mode) {
+    printf("\n");
+    scan_bus();
+    exit(0);
+  }
+  
+  memset(reply,0,sizeof(reply));
+  if ((dev_type=inquiry(vendor,model,rev))<0) 
+    die("error accessing scsi device");
+
   if (verbose_mode) {
     printf("device:   %s\n",dev);
     printf("Vendor:   %s\nModel:    %s\nRevision: %s\n",vendor,model,rev);
   }
 
-  if (strcmp(vendor,"TOSHIBA")) {
-    warn("NOTE! Audio track reading not supported on this device.\n");
+  if ( (dev_type&0x1f) != 0x5 ) {
+    die("Device doesn't seem to be a CD-ROM!");
   }
+
+#ifdef IRIX
+  if (strcmp(vendor,"TOSHIBA")) {
+    warn("NOTE! Audio track reading probably not supported on this device.\n");
+  }
+#endif
 
   test_ready();
   if (test_ready()!=0) {
     sleep(2);
-    if (test_ready()!=0)  die("device is busy");
+    if (test_ready()!=0)  die("device not ready");
   }
 
   fprintf(stderr,"Initializing...\n");
   if (audio_mode) {
+#ifdef IRIX
     audioport=ALopenport("readiso","w",0);
     if (!audioport) {
       warn("Cannot initialize audio.");
       audio_mode=0;
     }
+#else
+    audio_mode=0;
+#endif
   }
 
+
+#ifdef IRIX
   /* Make sure we get sane underflow exception handling */
   sigfpe_[_UNDERFL].repls = _ZERO;
   handle_sigfpes(_ON, _EN_UNDERFL, NULL, _ABORT_ON_ERROR, NULL);
+#endif
 
+  /* set_removable(1); */
 
-  set_removable(1);
-  replylen=sizeof(reply);
+#if 0
+  replylen=255;
+  if (mode_sense10(reply,&replylen)==0) {
+    printf("replylen=%d blocks=%d blocklen=%d\n",replylen,
+	   V3(&reply[8+1]),V3(&reply[8+5]));
+    PRINT_BUF(reply,replylen);
+  }
+  replylen=255; /* sizeof(reply); */
+  if (mode_sense(reply,&replylen)==0) {
+    printf("replylen=%d blocks=%d blocklen=%d\n",replylen,
+	   V3(&reply[4+1]),V3(&reply[4+5]));
+    PRINT_BUF(reply,replylen);
+  }
+#endif
+
   if (dump_mode==2) init_bsize=AUDIOBLOCKSIZE;
   else init_bsize=BLOCKSIZE;
-  mode_select(init_bsize,(dump_mode==2?0x82:0x00));
-  if (mode_sense(reply,&replylen)!=0) die("cannot get sense data");
-  drive_block_size=V3(&reply[9]);
-  if (drive_block_size!=init_bsize) die("cannot set drive block size.");
+
+  start_stop(0);
+
+  if ( (drive_block_size=get_block_size()) < 0 ) {
+    warn("cannot get current block size");
+    drive_block_size=init_bsize;
+  }
+
+  if (drive_block_size != init_bsize) {
+    mode_select(init_bsize,(dump_mode==2?0x82:0x00));
+    drive_block_size=get_block_size();
+    if (drive_block_size!=init_bsize) die("cannot set drive block size.");
+  }
+
   start_stop(1);
 
   if (dump_mode && !info_only) {
+#ifdef IRIX
     CDFRAME buf;
     if (dump_mode==2) {
       if (cdp) {
 	CDaddcallback(cdp, cd_audio, (CDCALLBACKFUNC)playaudio, 0);
       } else die("No audioparser");
     }
+#endif
     fprintf(stderr,"Dumping %d sector(s) starting from LBA=%d\n",
 	    dump_count,dump_start);
     for (i=dump_start;i<dump_start+dump_count;i++) {
@@ -707,10 +634,12 @@ int main(int argc, char **argv)
       read_10(i,1,buffer,&len);
       if (len<init_bsize) break;
 
+#ifdef IRIX
       if (dump_mode==2) {
 	memcpy(&buf,buffer,CDDA_BLOCKSIZE);
 	CDparseframe(cdp,&buf);
       }
+#endif
 	
       fwrite(buffer,len,1,outfile); 
       fprintf(stderr,".");
@@ -727,7 +656,7 @@ int main(int argc, char **argv)
   printf("\n");
 
   if (trackno==0) { /* try to find first data track */
-    for (i=0;i<(replylen-2)/8-1;i++) {
+    for (i=0;i<(reply[3]-reply[2]+1);i++) {
       o=4+i*8;
       if (reply[o+1]&DATA_TRACK) { trackno=i+1; break; }
     }
@@ -845,11 +774,13 @@ int main(int argc, char **argv)
 	     );
     }
   } else { 
+#ifdef IRIX
     /* if reading audio track */
     imagesize=tracksize;
     imagesize_bytes=imagesize*CDDA_DATASIZE;
     buffersize = READBLOCKS*AUDIOBLOCKSIZE;
     readblocksize = AUDIOBLOCKSIZE;
+
     if (cdp) {
       CDaddcallback(cdp, cd_audio, (CDCALLBACKFUNC)playaudio, 0);
     } else die("No audioparser");
@@ -863,6 +794,7 @@ int main(int argc, char **argv)
 		  AF_SAMPFMT_TWOSCOMP,16);          /* 16bit */
     aiffoutfile=AFopenfile(argv[optind],"w",aiffsetup);
     if (!aiffoutfile) die("Cannot open target file (%s).",argv[optind]);
+#endif
   }
 
   /* read the image */
@@ -890,10 +822,12 @@ int main(int argc, char **argv)
       if (!audio_track) {
 	fwrite(buffer,len,1,outfile);
       } else {
+#ifdef IRIX
 	/* audio track */
 	for(i=0;i<(len/CDDA_BLOCKSIZE);i++) {
 	  CDparseframe(cdp,(CDFRAME*)&buffer[i*CDDA_BLOCKSIZE]);
 	}
+#endif
       }
       if (md5_mode) MD5Update(MD5,buffer,(readsize>imagesize_bytes?
 				       len-(readsize-imagesize_bytes):len) );
@@ -908,7 +842,9 @@ int main(int argc, char **argv)
       else fprintf(stderr,"Image complete.\n");
       fclose(outfile);
     } else {
+#ifdef IRIX
       AFclosefile(aiffoutfile);
+#endif
     }
   }
 
@@ -921,13 +857,10 @@ int main(int argc, char **argv)
 
  quit:
   start_stop(0);
-  set_removable(1);
-#ifdef SGI
-  dsclose(dsp);
-#endif
-#ifdef LINUX
-  close(fd);
-#endif
+  /* set_removable(1); */
+
+  /* close the scsi device */
+  scsi_close();
 
   return 0;
 }

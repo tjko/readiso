@@ -16,22 +16,55 @@ AC_PROG_INSTALL
 AC_PROG_MAKE_SET
 
 
+dnl check if compiling for supported platform 
+
+case $host in
+   *-linux-*)
+	echo "You seem to be using Linux..."
+	AC_DEFINE(LINUX)
+	AC_DEFINE(DEFAULT_DEV,"/dev/sg0")
+	ARCHOBJS="scsi_linux.o"
+	TARGET_LINUX=yes
+        AC_CHECK_HEADERS(scsi/sg.h,,[
+          echo "Cannot find <scsi/sg.h> you need it."
+          exit 1
+         ])
+	;;
+
+   *-irix-*)
+	echo "You seem to be using Irix..."
+	AC_DEFINE(IRIX)
+	AC_DEFINE(DEFAULT_DEV,"/dev/scsi/sc0d4l0")
+	ARCHOBJS="scsi_irix.c"
+	TARGET_SGI=yes
+	AC_CHECK_LIB(ds, dsopen, ,[
+           echo "Cannot find libds (generic user mode SCSI driver lib)."
+           exit 1
+          ])
+        AC_CHECK_HEADERS(dslib.h,,[
+           echo "Cannot find dslib.h  You need libds."
+           exit 1
+          ])
+	LIBS="$LIBS -lfpe -laudio -lcdaudio -laudiofile"
+	;;
+   *)
+	echo "You seem to be using unsupported os..."
+	echo "(feel free to add support for your OS :)"
+	exit 1
+   ;;
+esac
+
+AC_SUBST(ARCHOBJS)
+
 dnl Checks for libraries.
 
-AC_CHECK_LIB(ds, dsopen, ,[
-echo "Cannot find libds (generic user mode SCSI driver lib)."
-exit 1
-])
+
 
 
 dnl Checks for header files.
 
 AC_HEADER_STDC
 AC_CHECK_HEADERS(unistd.h getopt.h string.h)
-AC_CHECK_HEADERS(dslib.h,,[
-echo "Cannot find dslib.h  You need libds."
-exit 1
-])
 
 
 dnl Checks for typedefs, structures, and compiler characteristics.
