@@ -3,14 +3,14 @@
 # Makefile for readiso for *nix environments
 #
 #
-Version = 0.3alpha
+Version = 0.3beta
 PKGNAME = readiso
 
 # Compile Options:
 #  -DLINUX    for Linux
 #  -DSGI      for Silicon Graphics
 
-DEFINES = -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc1d3l0\"
+DEFINES = -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc1d4l0\"
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin

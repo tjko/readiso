@@ -8,7 +8,7 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "0.3alpha"
+#define VERSION "0.3beta"
 #define PRGNAME "readiso"
 
 #include <stdio.h>
@@ -361,13 +361,15 @@ int read_toc(unsigned char *buf, int *buflen, int mode)
   if (result || !mode) return result;
 
   len=V2(&buf[0]); 
-  printf("\nFirst track: %02d \nLast track:  %02d\n",buf[2],buf[3]);
+  printf("\nTracks: %d \t (first=%02d last=%02d)\n",
+	(buf[3]-buf[2])+1,buf[2],buf[3]);
   
   for (i=0;i<((len-2)/8)-1;i++) {
     o=4+i*8; /* offset to track descriptor */
-    printf("Track %02d. %s (adr/ctrl=%02xh) start=%06d next=%06d\n",
+    printf("Track %02d: %s (adr/ctrl=%02xh) begin=%06d end=%06d  "
+           "length<=%06d\n",
 	   i+1,(buf[o+1]&0x04?"data ":"audio"),buf[o+1],V4(&buf[o+4]),
-	   V4(&buf[o+4+8]) );
+	   V4(&buf[o+4+8]),V4(&buf[o+4+8])-V4(&buf[o+4]) );
 
   }
 
