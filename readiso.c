@@ -507,7 +507,6 @@ int main(int argc, char **argv)
     case 'f':
       if (sscanf(optarg,"%d",&force_mode)!=1) die("invalid parameters");
       if (force_mode<0 || force_mode >2) force_mode=0;
-      printf("force_mode=%d\n",force_mode);
       break;
     case 'm':
       md5_mode=1;
@@ -634,9 +633,9 @@ int main(int argc, char **argv)
   else {
     if (imagesize + 64 < (stop-start)) {
       fprintf(stderr,"ISO primary descriptor has suspicious volume size"
-	             "(%d blocks)\n",imagesize);
+	             " (%d blocks)\n",imagesize);
       imagesize=(stop-start);
-      fprintf(stderr,"Using track size from TOC (%d blocks) instead.\n",
+      fprintf(stderr,"Using track size from TOC record (%d blocks) instead.\n",
 	      imagesize);
       fprintf(stderr,"(option -f can be used to override this behaviour.)\n");
     }
