@@ -9,7 +9,7 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "v1.0"
+#define VERSION "v1.1beta"
 #define PRGNAME "readiso"
 
 #include <stdio.h>
@@ -213,7 +213,7 @@ void die(char *format, ...)
 void p_usage(void) 
 {
   fprintf(stderr, PRGNAME " " VERSION 
-	  "  Copyright (c) Timo Kokkonen, 1997.\n"); 
+	  "  Copyright (c) Timo Kokkonen, 1997-1998.\n"); 
 
   fprintf(stderr,
 	  "Usage: " PRGNAME " [options] <imagefile>\n\n"
@@ -228,6 +228,10 @@ void p_usage(void)
           "  -m              calculate MD5 checksum for imagefile\n"
 	  "  -M              calculate MD5 checksum for disc (don't create\n"
 	  "                  image file).\n"
+	  "  -f<mode>        Force program to trust blindly either ISO primary\n"
+	  "                  descriptor or TOC record for the size of image.\n"
+          "                  mode = 1 (trust ISO primary descriptor)\n"
+	  "                         2 (trust TOC record)\n"
 	  "\n");
 
   exit(1);
@@ -452,6 +456,7 @@ int main(int argc, char **argv)
   long readsize = 0;
   long imagesize_bytes;
   int drive_block_size;
+  int force_mode = 0;
   int dump_mode = 0;
   int dump_start, dump_count;
   MD5_CTX *MD5; 
@@ -477,7 +482,7 @@ int main(int argc, char **argv)
  
   /* parse command line parameters */
   while(1) {
-    if ((c=getopt(argc,argv,"Mmvhid:t:c:"))==-1) break;
+    if ((c=getopt(argc,argv,"Mmvhid:t:c:f:"))==-1) break;
     switch (c) {
     case 'v':
       verbose_mode=1;
@@ -498,6 +503,11 @@ int main(int argc, char **argv)
       if (sscanf(optarg,"%d,%d",&dump_start,&dump_count)!=2)
 	die("invalid parameters");
       dump_mode=1;
+      break;
+    case 'f':
+      if (sscanf(optarg,"%d",&force_mode)!=1) die("invalid parameters");
+      if (force_mode<0 || force_mode >2) force_mode=0;
+      printf("force_mode=%d\n",force_mode);
       break;
     case 'm':
       md5_mode=1;
@@ -613,11 +623,27 @@ int main(int argc, char **argv)
   memcpy(&ipd,buffer,sizeof(ipd));
 
   imagesize=ISONUM(ipd.volume_space_size);
-  imagesize_bytes=imagesize*2048;
 
-  /* we should check here if we really got primary descriptor */
+  /* we should check here if we really got a valid primary descriptor */
   if ( (imagesize>(stop-start)) || (imagesize<1) ) 
     die("invalid ISO primary descriptor.");
+
+
+  if (force_mode==1) {} /* use size from primary descriptor */
+  else if (force_mode==2) imagesize=(stop-start); /* use size from TOC */
+  else {
+    if (imagesize + 64 < (stop-start)) {
+      fprintf(stderr,"ISO primary descriptor has suspicious volume size"
+	             "(%d blocks)\n",imagesize);
+      imagesize=(stop-start);
+      fprintf(stderr,"Using track size from TOC (%d blocks) instead.\n",
+	      imagesize);
+      fprintf(stderr,"(option -f can be used to override this behaviour.)\n");
+    }
+  }
+
+  imagesize_bytes=imagesize*2048;
+    
 
   if (verbose_mode||info_only) {
     printf("ISO9660 image info:\n");
