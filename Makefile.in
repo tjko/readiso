@@ -3,7 +3,7 @@
 # 
 # Makefile for readiso
 #
-Version = 1.2
+Version = 1.2.1
 PKGNAME = readiso
 
 SHELL = /bin/sh

@@ -1,9 +1,9 @@
 
-readiso v1.2  Copyright (c)  Timo Kokkonen, 1997-1998.
+readiso v1.2.1  Copyright (c)  Timo Kokkonen, 1997-1999.
 
 
 TESTED PLATFORMS
-	IRIX 5.3, 6.2 & 6.3
+	IRIX 5.3, 6.2, 6.3 & 6.5
         (Linux support not coming soon, unless someone
 	 else makes the port :)
 
@@ -21,7 +21,7 @@ INSTALLATION
 	tar file, make nesessary changes to the Makefile,  and then 
         compile the program. You may wanna do something like this:
 
-		zcat readiso-1.2.tar.gz | tar xf -
+		zcat readiso-1.2.1.tar.gz | tar xf -
 		cd readiso
 		./configure
 		make
@@ -30,6 +30,9 @@ INSTALLATION
 
 
 HISTORY
+	v1.2.1 - now displays track/image size also in mm:ss:ff format,
+	         some cleanup in code to make new MIPSpro compilers complain
+                 less on 6.5 :)
 	v1.2   - added support for reading audio tracks (tested only
 		 with TOSHIBA drives)
 	v1.1   - support for reading non ISO9660 discs,
@@ -56,4 +59,4 @@ LATEST VERSION
 
 
 Timo <tjko@iki.fi>
-24-Jul-1998
+17-Nov-1999
