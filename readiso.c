@@ -40,6 +40,7 @@
 #include <dmedia/audio.h>
 #include <dmedia/audiofile.h>
 #include <signal.h>
+#include <dslib.h>
 #endif
 
 #include "md5.h"
@@ -352,6 +353,7 @@ void scan_bus()
   lastdev=16;
 #endif
 #ifdef IRIX
+  firstdev=1;
   lastdev=15;
   lastbus=1;
 #endif
@@ -387,7 +389,7 @@ void scan_bus()
 }
 
 
-#ifdef SGI
+#ifdef IRIX
 void playaudio(void *arg, CDDATATYPES type, short *audio)
 {
   if (audio_mode) ALwritesamps(audioport, audio, CDDA_NUMSAMPLES);

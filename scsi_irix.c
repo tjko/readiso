@@ -10,8 +10,26 @@
  */
 
 #include "config.h"
+
+#include <stdlib.h>
 #include <stdarg.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <sys/file.h>
+#include <sys/errno.h>
+#include <sys/time.h>
+#include <sys/resource.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/ioctl.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <limits.h>
+#include <string.h>
+#include <stdio.h>
 #include <dslib.h>
+#include <sigfpe.h>
+#include <signal.h>
 
 #include "readiso.h"
 
