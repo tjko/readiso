@@ -33,6 +33,7 @@
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
+#include <time.h>
 
 #ifdef IRIX
 #include <sigfpe.h>
@@ -140,7 +141,7 @@ void warn(char *format, ...)
 void p_usage(void) 
 {
   fprintf(stderr, PRGNAME " " VERSION "  "
-	  "Copyright (c) Timo Kokkonen, 1997-1999.\n"); 
+	  "Copyright (c) Timo Kokkonen, 1997-2000.\n"); 
 
   fprintf(stderr,
 	  "Usage: " PRGNAME " [options] <imagefile>\n\n"
@@ -437,6 +438,7 @@ int main(int argc, char **argv)
   int dev_type;
   int i,c,o;
   int len;
+  int start_time,cur_time,kbps;
 
   if (rcsid); 
 
@@ -804,6 +806,7 @@ int main(int argc, char **argv)
   if (md5_mode) MD5Init(MD5);
 
   if (!info_only) {
+    start_time=(int)time(NULL);
     fprintf(stderr,"Reading %s (%ldMb)...\n",
 	    audio_track?"audio track":"ISO9660 image",
 	    imagesize_bytes/(1024*1024));
@@ -816,8 +819,15 @@ int main(int argc, char **argv)
       else
 	read_10(start+counter,READBLOCKS,buffer,&len);
       if ((counter%(1024*1024/readblocksize))<READBLOCKS) {
-	fprintf(stderr,"%3dM of %dM read.         \r",
-		counter/512,imagesize/512);
+	cur_time=(int)time(NULL);
+	if ((cur_time-start_time)>0) {
+	  kbps=(readsize/1024)/(cur_time-start_time);
+	} else {
+	  kbps=0;
+	}
+	
+	fprintf(stderr,"%3dM of %dM read. (%d kb/s)         \r",
+		counter/512,imagesize/512,kbps);
       }
       counter+=READBLOCKS;
       readsize+=len;
