@@ -1,9 +1,9 @@
 
-Readiso v0.5beta  Copyright (c)  Timo Kokkonen, 1997.
+Readiso v1.0  Copyright (c)  Timo Kokkonen, 1997.
 
 
 TESTED PLATFORMS
-	IRIX 5.3 & 6.3
+	IRIX 5.3,6.2 & 6.3
         (Linux support coming soon (or not so soon, I'm feeling lazy :)...
 	 any help on porting appreciated though :)
 
@@ -27,6 +27,8 @@ INSTALLATION
 
 
 HISTORY
+	v1.0   - first stable version, only minor changes to v0.5,
+		 no need to upgrade if you have allready v0.5.
 	v0.5   - added MD5 checksum calculation for imagefiles/discs.	
 	v0.3   - some bugfixes, minor changes to code, and better
 	 	 reporting of the ISO primay descriptor, also
@@ -45,4 +47,4 @@ LATEST VERSION
 
 
 Timo <tjko@jyu.fi>
-22-Oct-1997
+19-Dec-1997
