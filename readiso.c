@@ -8,7 +8,7 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "0.3beta"
+#define VERSION "0.5beta"
 #define PRGNAME "readiso"
 
 #include <stdio.h>
@@ -26,6 +26,10 @@
 #include <unistd.h>
 #include <limits.h>
 #include <string.h>
+
+#include "md5/global.h"
+#include "md5/md5.h"
+
 
 #ifdef SGI
 #include <dslib.h>
@@ -166,6 +170,31 @@ int verbose_mode = 0;
 
 /************************************************************************/
 
+char *md2str(unsigned char *digest, char *s)
+{
+  int i;
+  char buf[16],*r;
+
+  if (!digest) return NULL;
+  if (!s) {
+    s=(char*)malloc(33);
+    if (!s) return NULL;
+  }
+
+  r=s;
+  for (i = 0; i < 16; i++) {
+    sprintf (buf,"%02x", digest[i]);
+    *(s++)=buf[0];
+    *(s++)=buf[1];
+  }
+  *s=0;
+
+  return r;
+}
+
+
+
+
 void die(char *format, ...)
 {
   va_list args;
@@ -193,6 +222,10 @@ void p_usage(void)
 	  "  -t<number>      reads specified track (default is first data "
 	  "track found)\n"
 	  "  -v              verbose mode\n"
+	  "  -c<lba,n>       dumb 'n' sectors from cd, starting from 'lba'\n"
+          "  -m              calculate MD5 checksum for imagefile\n"
+	  "  -M              calculate MD5 checksum for disc (don't create\n"
+	  "                  image file).\n"
 	  "\n");
 
   exit(1);
@@ -418,11 +451,18 @@ int main(int argc, char **argv)
   long readsize = 0;
   long imagesize_bytes;
   int drive_block_size;
+  int dump_mode = 0;
+  int dump_start, dump_count;
+  MD5_CTX *MD5; 
+  char digest[16],digest_text[33];
+  int md5_mode = 0;
 
-  int i,c,o,len;
+  int i,c,o;
+  unsigned int len;
 
+  MD5 = malloc(sizeof(MD5_CTX));
   buffer=(unsigned char*)malloc(READBLOCKS*BLOCKSIZE);
-  if (!buffer) die("No memory");
+  if (!buffer || !MD5) die("No memory");
 
   if (argc<2) die("parameters missing\n"
 	          "Try '%s -h' for more information.\n",PRGNAME);
@@ -430,7 +470,7 @@ int main(int argc, char **argv)
  
   /* parse command line parameters */
   while(1) {
-    if ((c=getopt(argc,argv,"vhid:t:"))==-1) break;
+    if ((c=getopt(argc,argv,"Mmvhid:t:c:"))==-1) break;
     switch (c) {
     case 'v':
       verbose_mode=1;
@@ -447,6 +487,17 @@ int main(int argc, char **argv)
     case 'i':
       info_only=1; 
       break;
+    case 'c':
+      if (sscanf(optarg,"%d,%d",&dump_start,&dump_count)!=2)
+	die("invalid parameters");
+      dump_mode=1;
+      break;
+    case 'm':
+      md5_mode=1;
+      break;
+    case 'M':
+      md5_mode=2;
+      break;
 
     case '?':
       break;
@@ -459,7 +510,8 @@ int main(int argc, char **argv)
 
 
   if (!info_only) {
-    outfile=fopen(argv[optind],"w");
+    if (md5_mode==2) outfile=fopen("/dev/null","w");
+    else outfile=fopen(argv[optind],"w");
     if (!outfile) die("cannot open output file '%s'",argv[optind]);
   }
 
@@ -503,6 +555,22 @@ int main(int argc, char **argv)
   if (drive_block_size!=2048) die("cannot set drive to 2048bytes/block mode.");
   start_stop(1);
 
+
+  if (dump_mode) {
+    fprintf(stderr,"Dumping %d sector(s) starting from LBA=%d\n",
+	    dump_count,dump_start);
+    for (i=dump_start;i<dump_start+dump_count;i++) {
+      len=buffersize;
+      read_10(i,1,buffer,&len);
+      if (len<2048) break;
+      fwrite(buffer,len,1,outfile);
+      fprintf(stderr,".");
+    }
+    fprintf(stderr,"\ndone.\n");
+    goto quit;
+  }
+
+
   fprintf(stderr,"Reading disc TOC...");
   replylen=sizeof(reply);
   read_toc(reply,&replylen,verbose_mode);
@@ -527,7 +595,8 @@ int main(int argc, char **argv)
   /* if (verbose_mode) printf("Start LBA=%d\nStop  LBA=%d\n",start,stop); */
 
   len=buffersize;
-  read_10(start,1,buffer,&len);
+  read_10(start-0,1,buffer,&len);
+  /* PRINT_BUF(buffer,32); */
   
   /* read the iso9660 primary descriptor */
   fprintf(stderr,"Reading ISO9660 primary descriptor...\n");
@@ -580,28 +649,41 @@ int main(int argc, char **argv)
 
   /* read the image */
 
+  if (md5_mode) MD5Init(MD5);
+
   if (!info_only) {
-    fprintf(stderr,"Reading the ISO9660 image (%dMb)...",
+    fprintf(stderr,"Reading the ISO9660 image (%dMb)...\n",
 	    imagesize_bytes/(1024*1024));
 
     do {
       len=buffersize;
       read_10(start+counter,READBLOCKS,buffer,&len);
       if ((counter%(1024*1024/BLOCKSIZE))<READBLOCKS) {
-	fprintf(stderr,".",counter);
+	fprintf(stderr,"%3dM of %dM read.         \r",
+		counter/512,imagesize/512);
       }
       counter+=READBLOCKS;
       readsize+=len;
       fwrite(buffer,len,1,outfile);
+      if (md5_mode) MD5Update(MD5,buffer,(readsize>imagesize_bytes?
+				       len-(readsize-imagesize_bytes):len) );
     } while (len==BLOCKSIZE*READBLOCKS && readsize<imagesize*2048);
     
-    fprintf(stderr,"\ndone.\n");
+    fprintf(stderr,"\n");
     if (readsize > imagesize_bytes) ftruncate(fileno(outfile),imagesize_bytes);
     if (readsize < imagesize_bytes) fprintf(stderr,"Image not complete!\n");
-
+    else fprintf(stderr,"Image complete.\n");
     fclose(outfile);
   }
 
+  if (md5_mode) {
+    MD5Final(digest,MD5);
+    md2str(digest,digest_text);
+    fprintf(stderr,"MD5 (%s) = %s\n",(md5_mode==2?"'image'":argv[optind]),
+	    digest_text);
+  }
+
+ quit:
   start_stop(0);
   set_removable(1);
 #ifdef SGI

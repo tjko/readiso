@@ -1,15 +1,16 @@
 
-Readiso v0.3beta  Copyright (c)  Timo Kokkonen, 1997.
+Readiso v0.5beta  Copyright (c)  Timo Kokkonen, 1997.
 
 
 TESTED PLATFORMS
-	IRIX 5.3
-        (Linux support coming soon...any help on porting appreciated)
+	IRIX 5.3 & 6.3
+        (Linux support coming soon (or not so soon, I'm feeling lazy :)...
+	 any help on porting appreciated though :)
 
 TESTED DRIVES
 	should work on any scsi cd-rom (or cd-r) drive, but only
-	tested to work with:
-	   TOSHIBA XM-3301TA
+	tested and known to work with:
+	   TOSHIBA XM-3301TA & XM-3501TA
 	   PINNACLE RCD-5040
 
 
@@ -26,6 +27,7 @@ INSTALLATION
 
 
 HISTORY
+	v0.5   - added MD5 checksum calculation for imagefiles/discs.	
 	v0.3   - some bugfixes, minor changes to code, and better
 	 	 reporting of the ISO primay descriptor, also
                  added stuff for Linux support (untested so probably
@@ -43,4 +45,4 @@ LATEST VERSION
 
 
 Timo <tjko@jyu.fi>
-12-Sep-1997
+22-Oct-1997

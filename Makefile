@@ -3,14 +3,14 @@
 # Makefile for readiso for *nix environments
 #
 #
-Version = 0.3beta
+Version = 0.5beta
 PKGNAME = readiso
 
 # Compile Options:
 #  -DLINUX    for Linux
 #  -DSGI      for Silicon Graphics
 
-DEFINES = -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc1d4l0\"
+DEFINES = -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc0d3l0\"
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin
@@ -35,9 +35,10 @@ STRIP  = strip
 DIRNAME = $(shell basename `pwd`) 
 DISTNAME  = $(PKGNAME)-$(Version)
 
+OBJS = $(PKGNAME).o md5/md5c.o
 
-$(PKGNAME):	$(PKGNAME).c Makefile
-	$(CC) $(CFLAGS) -o $(PKGNAME) $(PKGNAME).c $(LIBS) 
+$(PKGNAME):	$(OBJS) Makefile
+	$(CC) $(CFLAGS) -o $(PKGNAME) $(OBJS) $(LIBS) 
 
 all:	$(PKGNAME) 
 
@@ -45,7 +46,7 @@ strip:
 	$(STRIP) $(PKGNAME)
 
 clean:
-	rm -f *~ *.o core a.out make.log $(PKGNAME)
+	rm -f *~ $(OBJS) core a.out make.log $(PKGNAME)
 
 dist:	clean
 	(cd .. ; tar cvzf $(DISTNAME).tar.gz $(DIRNAME))
