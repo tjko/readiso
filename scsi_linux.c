@@ -11,13 +11,14 @@
 
 #include "config.h"
 #include <linux/version.h>
-#include <scsi/scsi.h>
-#include <scsi/sg.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <stdarg.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <scsi/scsi.h>
+#include <scsi/scsi_ioctl.h>
+#include <scsi/sg.h> 
 
 #include "readiso.h"
 

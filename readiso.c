@@ -617,7 +617,7 @@ int main(int argc, char **argv)
   if (drive_block_size != init_bsize) {
     mode_select(init_bsize,(dump_mode==2?0x82:0x00));
     drive_block_size=get_block_size();
-    if (drive_block_size!=init_bsize) die("cannot set drive block size.");
+    if (drive_block_size!=init_bsize) warn("cannot set drive block size.");
   }
 
   start_stop(1);
