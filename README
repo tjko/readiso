@@ -1,18 +1,19 @@
 
-readiso v1.1  Copyright (c)  Timo Kokkonen, 1997-1998.
+readiso v1.2  Copyright (c)  Timo Kokkonen, 1997-1998.
 
 
 TESTED PLATFORMS
 	IRIX 5.3, 6.2 & 6.3
-        (Linux support coming soon (or not so soon, I'm feeling lazy :)...
-	 any help on porting appreciated though :)
+        (Linux support not coming soon, unless someone
+	 else makes the port :)
 
 TESTED DRIVES
 	should work on any scsi cd-rom (or cd-r) drive, but only
 	tested and known to work with:
 	   TOSHIBA XM-3301TA
 	   TOSHIBA XM-3501TA
-	   PINNACLE RCD-5040 
+	   TOSHIBA XM-5701TA	
+           PINNACLE RCD-5040 
 
 
 INSTALLATION
@@ -20,7 +21,7 @@ INSTALLATION
 	tar file, make nesessary changes to the Makefile,  and then 
         compile the program. You may wanna do something like this:
 
-		zcat readiso-1.0.tar.gz | tar xf -
+		zcat readiso-1.2.tar.gz | tar xf -
 		cd readiso
 		./configure
 		make
@@ -29,6 +30,8 @@ INSTALLATION
 
 
 HISTORY
+	v1.2   - added support for reading audio tracks (tested only
+		 with TOSHIBA drives)
 	v1.1   - support for reading non ISO9660 discs,
 	 	 now uses free MD5 algorithm, support for long options,
 		 uses GNU autoconf (hopefully making the compiling of
@@ -53,4 +56,4 @@ LATEST VERSION
 
 
 Timo <tjko@iki.fi>
-26-Feb-1998
+24-Jul-1998
