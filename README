@@ -1,17 +1,18 @@
 
-Readiso v1.0  Copyright (c)  Timo Kokkonen, 1997.
+readiso v1.0  Copyright (c)  Timo Kokkonen, 1997-1998.
 
 
 TESTED PLATFORMS
-	IRIX 5.3,6.2 & 6.3
+	IRIX 5.3, 6.2 & 6.3
         (Linux support coming soon (or not so soon, I'm feeling lazy :)...
 	 any help on porting appreciated though :)
 
 TESTED DRIVES
 	should work on any scsi cd-rom (or cd-r) drive, but only
 	tested and known to work with:
-	   TOSHIBA XM-3301TA & XM-3501TA
-	   PINNACLE RCD-5040
+	   TOSHIBA XM-3301TA
+	   TOSHIBA XM-3501TA
+	   PINNACLE RCD-5040 
 
 
 INSTALLATION
@@ -19,8 +20,9 @@ INSTALLATION
 	tar file, make nesessary changes to the Makefile,  and then 
         compile the program. You may wanna do something like this:
 
-		zcat readiso-0.3beta.tar.gz | tar xf -
+		zcat readiso-1.0.tar.gz | tar xf -
 		cd readiso
+		<edit Makefile>
 		make
 		make strip
 		make install
@@ -45,6 +47,11 @@ LATEST VERSION
 		http://www.jyu.fi/~tjko/projects.html
 
 
+ACKNOWLEDGEMENTS
+	This software contains parts derived from the RSA Data Security, Inc.
+	MD5 Message-Digest Algorithm.
+
+
 
 Timo <tjko@jyu.fi>
-19-Dec-1997
+05-Jan-1998
