@@ -3,12 +3,13 @@
  * copyright (c) 1997  Timo Kokkonen <tjko@jyu.fi>
  *
  * 
- * This file may be copied under the terms and conditions of version 2
+ * This file may be copied under the terms and conditions 
  * of the GNU General Public License, as published by the Free
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "0.2"
+#define VERSION "0.3alpha"
+#define PRGNAME "readiso"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,12 +34,27 @@
 
 #ifdef LINUX
 #include <linux/version.h>
-#include <linux/scsi.h>
+#include <scsi.h>
+#include <sg.h>
 #endif
 
 
 /* debug macro to print buffer in hex */
 #define PRINT_BUF(x,n) { int i; for(i=0;i<n;i++) printf("%02x ",(unsigned char*)x[i]); printf("\n"); fflush(stdout); }
+
+
+/* mode definitions for scsi_request() function */
+#define SCSIR_READ     0x01
+#define SCSIR_WRITE    0x02
+#define SCSIR_QUIET    0x10
+
+#ifdef SGI
+#define READBLOCKS     64    /* no of blocks to read at a time */
+#else
+#define READBLOCKS     1
+#endif
+
+#define BLOCKSIZE      2048  /* (read) block size */
 
 
 /* scsi commands used by the program */
@@ -69,6 +85,14 @@
 #define ISODCL(from, to) (to - from + 1)
 #define ISONUM(n) ( ((n)[0]&0xff) | (((n)[1]&0xff)<<8) | (((n)[2]&0xff)<<16) \
                     | (((n)[3]&0xff)<<24) )
+
+#define ISOGETSTR(t,s,l) { char *r=((t)+(int)((l)-1)); memcpy((t),(s),(l)); \
+		    	   while (*r==' '&&r>=(t)) r--;  *(r+1)=0; }
+#define ISOGETDATE(t,s)  sprintf((t),"%c%c.%c%c.%c%c%c%c %c%c:%c%c:%c%c",\
+				   s[6],s[7],s[4],s[5],s[0],s[1],s[2],s[3],\
+				   s[8],s[9],s[10],s[11],s[12],s[13]); 
+#define NULLISODATE(s)  (s[0]==s[1]&&s[1]==s[2]&&s[2]==s[3]&&s[3]==s[4]&& \
+			 s[4]==s[5]&&s[5]==s[6]&&s[6]==s[7]&&s[7]==s[8])
 
 
 /* ISO9660 primary descriptor definition */
@@ -113,38 +137,55 @@ typedef struct iso_primary_descriptor_type_ {
 
 
 
-
 #ifndef DEFAULT_DEV
 #define DEFAULT_DEV "/dev/cdrom"
 #endif
 char *default_dev = DEFAULT_DEV;
 
-static struct dsreq *dsp;
+#ifdef SGI
+static struct dsreq *dsp;   /* handle to scsi device */
+#endif
+
+#ifdef LINUX
+#define FUDGE          10    
+struct sg_request {
+  struct sg_header header;
+  unsigned char bytes[READBLOCKS*BLOCKSIZE+FUDGE];
+} sg_request;
+
+struct sg_reply {
+  struct sg_header header;
+  unsigned char bytes[100+READBLOCKS*BLOCKSIZE];
+};
+
+int fd;    /* file descriptor of the scsi device open */
+#endif
+
 int verbose_mode = 0;
 
 
-#define SCSIR_READ     0
-#define SCSIR_WRITE    1
- 
-#define READBLOCKS     64
-#define BLOCKSIZE      2048
-
 /************************************************************************/
 
-void die(char *msg)
+void die(char *format, ...)
 {
-  fprintf(stderr,"readiso: %s\n",msg);
+  va_list args;
+
+  fprintf(stderr, PRGNAME ": ");
+  va_start(args,format);
+  vfprintf(stderr, format, args);
+  va_end(args);
+  fprintf(stderr,"\n");
+  fflush(stderr);
   exit(1);
 }
 
-
 void p_usage(void) 
 {
-  fprintf(stderr,"readiso " VERSION 
+  fprintf(stderr, PRGNAME " " VERSION 
 	  "  Copyright (c) Timo Kokkonen, 1997.\n"); 
 
   fprintf(stderr,
-	  "Usage: readiso [options] <imagefile>\n\n"
+	  "Usage: " PRGNAME " [options] <imagefile>\n\n"
 	  "  -d<device>      specifies the scsi device to use "
 	  "(default: " DEFAULT_DEV ")\n"
 	  "  -h              display this help and exit\n"
@@ -158,10 +199,11 @@ void p_usage(void)
 }
 
 
-
 int scsi_request(char *note, unsigned char *reply, int *replylen, 
 		 int cmdlen, int datalen, int mode, ...)
 {
+#ifdef SGI
+/* Irix... */
   va_list args;
   int result,i;
   unsigned char *buf,*databuf;
@@ -177,12 +219,13 @@ int scsi_request(char *note, unsigned char *reply, int *replylen,
   CMDBUF(dsp)=buf;
   CMDLEN(dsp)=cmdlen;
   
-  if (mode==SCSIR_READ) filldsreq(dsp,reply,*replylen,DSRQ_READ|DSRQ_SENSE);
+  if (mode&SCSIR_READ) 
+    filldsreq(dsp,reply,*replylen,DSRQ_READ|DSRQ_SENSE);
   else filldsreq(dsp,databuf,datalen,DSRQ_WRITE|DSRQ_SENSE);
   dsp->ds_time = 15*1000;
   result = doscsireq(getfd(dsp),dsp);
 
-  if (RET(dsp) && RET(dsp) != DSRT_SHORT)  {
+  if (RET(dsp) && RET(dsp) != DSRT_SHORT && !(mode&SCSIR_QUIET)) {
     fprintf(stderr,"%s status=%d ret=%xh sensesent=%d datasent=%d "
 	    "senselen=%d\n", note, STATUS(dsp), RET(dsp),
 	    SENSESENT(dsp), DATASENT(dsp), SENSELEN(dsp));
@@ -191,23 +234,67 @@ int scsi_request(char *note, unsigned char *reply, int *replylen,
 
   if (mode==SCSIR_READ) { *replylen=DATASENT(dsp); } 
 
-  free(buf);
+
   free(databuf);
 
   return result;
-}
 
+#else 
+/* Linux... */
+
+  va_list args;
+  struct sg_request sg_request;
+  struct sg_reply sg_reply;
+  int result,i,size,wasread;
+  static int pack_id=0;
+
+  memset(&sg_request,0,sizeof(sg_request));
+  sg_request.header.pack_len=sizeof(struct sg_header) + 10;
+  sg_request.header.reply_len=*replylen + sizeof(struct sg_header);
+  sg_request.header.pack_id=pack_id++;
+  sg_request.header.result=0;
+  
+  size=sizeof(struct sg_header)+cmdlen+datalen;
+
+  va_start(args,mode);
+  for (i=0;i<(cmdlen+datalen);i++) 
+    sg_request.bytes[i]=va_arg(args,unsigned int);
+  va_end(args);
+  
+  result = write(fd,&sg_request, size);
+  if (result<0) {
+    fprintf(stderr,"%s write error %d\n",note,result);
+    return result;
+  }
+  else if (result!=size) {
+    fprintf(stderr,"%s wrote only %dbytes of expected %dbytes\n",note,
+	    result,size);
+    return 2;
+  }
+  
+  wasread=read(fd,&sg_reply,sizeof(struct sg_reply));
+  if (wasread > sizeof(struct sg_header)) {
+    *replylen=wasread-sizeof(struct sg_header);
+    memcpy(reply,sg_reply.bytes,*replylen);
+  }
+  else *replylen=0;
+
+  if (!(mode&SCSIR_QUIET) {
+    fprintf(stderr,"%s status=%d result=%d\n",wasread,sg_reply.header.result);
+  }
+
+  return sg_reply.header.result;
+
+#endif
+}
 
 
 int inquiry(char *manufacturer, char *model, char *revision) {
   int i, result;
-  char *reply;
   unsigned char bytes[255];
   int replylen = sizeof(bytes);
 
-  manufacturer[0]=0;
-  model[0]=0;
-  revision[0]=0;
+  manufacturer[0]=model[0]=revision[0]=0;
 
   result = scsi_request("inquiry",bytes,&replylen,6,0,SCSIR_READ,
 			INQUIRY, /* 0 */
@@ -215,24 +302,21 @@ int inquiry(char *manufacturer, char *model, char *revision) {
 
   if (result) return result;
 
+  for(i=35;i>32;i--) if(bytes[i]!=' ') break;
+  bytes[i+1]=0;
+  strncpy(revision,&bytes[32],5);
 
-  for(i=15; i>8; i--) if(bytes[i] != ' ') break;
-  reply = (char *) &bytes[8];
-  while(i-->=8) *manufacturer++ = *reply++;
-  *manufacturer = 0;
+  for(i=31;i>16;i--) if(bytes[i]!=' ') break;
+  bytes[i+1]=0;
+  strncpy(model,&bytes[16],17);
 
-  for(i=31; i>16; i--) if(bytes[i] != ' ') break;
-  reply = (char *) &bytes[16];
-  while(i-->=16) *model++ = *reply++;
-  *model = 0;
-
-  for(i=35; i>32; i--) if(bytes[i] != ' ') break;
-  reply = (char *) &bytes[32];
-  while(i-->=32) *revision++ = *reply++;
-  *revision = 0;
+  for(i=15;i>8;i--) if(bytes[i]!=' ') break;
+  bytes[i+1]=0;
+  strncpy(manufacturer,&bytes[8],9);
 
   return result;
 }
+
 
 int mode_sense(unsigned char *buf, int *buflen)
 {
@@ -247,17 +331,20 @@ int start_stop(int start)
 		      STOPUNIT,0,0,0,(start?1:0),0);
 }
 
+
 int set_removable(int removable)
 {
   return scsi_request("set_removable",0,0,6,0,SCSIR_WRITE,
 		      REMOVAL,0,0,0,(removable?0:1),0);
 }
 
+
 int test_ready()
 {
-  return scsi_request("test_unit_ready",0,0,6,0,SCSIR_WRITE,
+  return scsi_request("test_unit_ready",0,0,6,0,SCSIR_WRITE|SCSIR_QUIET,
 		      TESTREADY,0,0,0,0,0);
 }
+
 
 int read_toc(unsigned char *buf, int *buflen, int mode)
 {
@@ -287,6 +374,7 @@ int read_toc(unsigned char *buf, int *buflen, int mode)
   return result;
 }
 
+
 int read_10(int lba, int len, unsigned char *buf, int *buflen)
 {
   return scsi_request("read_10",buf,buflen,10,0,SCSIR_READ,
@@ -298,6 +386,7 @@ int read_10(int lba, int len, unsigned char *buf, int *buflen)
 
 }
 
+
 int mode_select(int bsize)
 {
   return scsi_request("mode_select",0,0,6,12,SCSIR_WRITE,
@@ -306,7 +395,9 @@ int mode_select(int bsize)
 		     0,B3(0),0,B3(bsize) );
 }
 
-/*****************************************************************/
+
+
+/************************************************************************/
 int main(int argc, char **argv) 
 {
   FILE *outfile;
@@ -314,7 +405,7 @@ int main(int argc, char **argv)
   int fd;
   char *dev = default_dev;
   char vendor[9],model[17],rev[5];
-  char reply[1024],tmpstr[255];
+  char reply[1024],tmpstr[255], *s;
   int replylen=sizeof(reply);
   int trackno = 0;
   int info_only = 0;
@@ -331,11 +422,9 @@ int main(int argc, char **argv)
   buffer=(unsigned char*)malloc(READBLOCKS*BLOCKSIZE);
   if (!buffer) die("No memory");
 
-  if (argc<2) {
-    fprintf(stderr,"readiso: parameters missing\n"
-	    "Try 'readiso -h' for more information.\n ");
-    exit(1);
-  }
+  if (argc<2) die("parameters missing\n"
+	          "Try '%s -h' for more information.\n",PRGNAME);
+
  
   /* parse command line parameters */
   while(1) {
@@ -354,49 +443,65 @@ int main(int argc, char **argv)
       if (sscanf(optarg,"%d",&trackno)!=1) trackno=0;
       break;
     case 'i':
-      info_only=1; verbose_mode=1;
+      info_only=1; 
       break;
 
     case '?':
       break;
 
     default:
-	fprintf(stderr,"readiso: error parsing parameters.\n");
-	exit(1);
+      die("error parsing parameters");
+
     }
   }
 
 
   if (!info_only) {
     outfile=fopen(argv[optind],"w");
-    if (!outfile) die("Cannot open output file.");
+    if (!outfile) die("cannot open output file '%s'",argv[optind]);
   }
 
   /* open the scsi device */
-  dsp=dsopen(dev, O_RDWR|O_EXCL);
-  if (!dsp) die("error opening the scsi device");
+#ifdef SGI  
+  dsp=dsopen(dev, O_RDWR);
+  if (!dsp)  die("error opening scsi device '%s'",dev); 
+#endif
+#ifdef LINUX
+  fd=open(dev,O_RDWR);
+  if (fd<0) die("error opening scsi device '%s'",dev);
+  i=fcntl(fd,F_GETFL);
+  fcntl(fd,F_SETFL,i|O_NONBLOCK);
+  while(read(fd,reply,sizeof(reply))!=-1 || errno!=EAGAIN); /* empty buffer */
+  fcntl(fd,F_SETFL,i&~O_NONBLOCK);
+#endif
 
-  inquiry(vendor,model,rev);
+  memset(reply,0,sizeof(reply));
+
+
+  if (inquiry(vendor,model,rev)!=0) die("error accessing scsi device");
+
   printf("readiso(9660) " VERSION "\n");
-  printf("device:   %s\n",dev);
-  printf("Vendor:   %s\nModel:    %s\nRevision: %s\n",vendor,model,rev);
-
-
-  if (test_ready()!=0) {
-    sleep(1);
-    if (test_ready()!=0)  die("Unit not ready");
+  if (verbose_mode) {
+    printf("device:   %s\n",dev);
+    printf("Vendor:   %s\nModel:    %s\nRevision: %s\n",vendor,model,rev);
   }
 
-  printf("Initializing..."); fflush(stdout);
+  test_ready();
+  if (test_ready()!=0) {
+    sleep(2);
+    if (test_ready()!=0)  die("device is busy");
+  }
+
+  fprintf(stderr,"Initializing...\n");
   set_removable(1);
   replylen=sizeof(reply);
   mode_select(2048);
   if (mode_sense(reply,&replylen)!=0) die("cannot get sense data");
   drive_block_size=V3(&reply[9]);
-  if (drive_block_size!=2048) die("Cannot set drive to 2048bytes/block mode.");
+  if (drive_block_size!=2048) die("cannot set drive to 2048bytes/block mode.");
   start_stop(1);
 
-  printf("done\nReading disc TOC..."); fflush(stdout);
+  fprintf(stderr,"Reading disc TOC...");
   replylen=sizeof(reply);
   read_toc(reply,&replylen,verbose_mode);
   printf("\n");
@@ -409,69 +514,102 @@ int main(int argc, char **argv)
     if (trackno==0) die("No data track(s) found.");
   }
 
-  printf("Reading track: %d\n",trackno);
+  fprintf(stderr,"Reading track %d...\n",trackno); 
+
   if ( (trackno < reply[2]) || (trackno > reply[3]) || 
       ((reply[(trackno-1)*8+4+1]&0x04)==0) ) die("Not a data track.");
 
 
   start=V4(&reply[(trackno-1)*8+4+4]);
   stop=V4(&reply[(trackno)*8+4+4]);
-  if (verbose_mode) printf("Start LBA=%d\nStop  LBA=%d\n",start,stop);
-
+  /* if (verbose_mode) printf("Start LBA=%d\nStop  LBA=%d\n",start,stop); */
 
   len=buffersize;
   read_10(start,1,buffer,&len);
   
   /* read the iso9660 primary descriptor */
-  printf("Reading ISO9660 primary descriptor...\n"); fflush(stdout);
+  fprintf(stderr,"Reading ISO9660 primary descriptor...\n");
   len=buffersize;
   read_10(start+16,1,buffer,&len);
-  if (len<sizeof(ipd)) die("Cannot read iso9660 primary descriptor.");
+  if (len<sizeof(ipd)) die("cannot read iso9660 primary descriptor.");
   memcpy(&ipd,buffer,sizeof(ipd));
 
   imagesize=ISONUM(ipd.volume_space_size);
   imagesize_bytes=imagesize*2048;
 
   /* we should check here if we really got primary descriptor */
-  if (imagesize>(stop-start)) die("Invalid ISO primary descriptor.");
+  if ( (imagesize>(stop-start)) || (imagesize<1) ) 
+    die("invalid ISO primary descriptor.");
 
-  if (verbose_mode) {
-    printf("ISO9660 Image:\n");
-    printf("Type:       %02xh\n",ipd.type[0]);  
-    printf("ID:         %c%c%c%c%c\n",ipd.id[0],ipd.id[1],ipd.id[2],ipd.id[3],
-	   ipd.id[4]);
-    printf("Version:    %d\n",ipd.version[0]);
-    memcpy(tmpstr,ipd.system_id,32); tmpstr[32]=0;
-    printf("System id:  %s\n",tmpstr);
-    memcpy(tmpstr,ipd.volume_id,32); tmpstr[32]=0;
-    printf("Volume id:  %s\n",tmpstr);
-    printf("Size:       %d blocks (%d bytes).\n",imagesize,imagesize_bytes);
+  if (verbose_mode||info_only) {
+    printf("ISO9660 image info:\n");
+    printf("Type:              %02xh\n",ipd.type[0]);  
+    ISOGETSTR(tmpstr,ipd.id,5);
+    printf("ID:                %s\n",tmpstr);
+    printf("Version:           %u\n",ipd.version[0]);
+    ISOGETSTR(tmpstr,ipd.system_id,32);
+    printf("System id:         %s\n",tmpstr);
+    ISOGETSTR(tmpstr,ipd.volume_id,32);
+    printf("Volume id:         %s\n",tmpstr);
+    ISOGETSTR(tmpstr,ipd.volume_set_id,128);
+    if (strlen(tmpstr)>0) printf("Volume set id:     %s\n",tmpstr);
+    ISOGETSTR(tmpstr,ipd.publisher_id,128);
+    if (strlen(tmpstr)>0) printf("Publisher id:      %s\n",tmpstr);
+    ISOGETSTR(tmpstr,ipd.preparer_id,128);
+    if (strlen(tmpstr)>0) printf("Preparer id:       %s\n",tmpstr);
+    ISOGETSTR(tmpstr,ipd.application_id,128);
+    if (strlen(tmpstr)>0) printf("Application id:    %s\n",tmpstr);
+    ISOGETDATE(tmpstr,ipd.creation_date);
+    printf("Creation date:     %s\n",tmpstr);
+    ISOGETDATE(tmpstr,ipd.modification_date);
+    if (!NULLISODATE(ipd.modification_date)) 
+	printf("Modification date: %s\n",tmpstr);
+    ISOGETDATE(tmpstr,ipd.expiration_date);
+    if (!NULLISODATE(ipd.expiration_date))
+	printf("Expiration date:   %s\n",tmpstr);
+    ISOGETDATE(tmpstr,ipd.effective_date);
+    if (!NULLISODATE(ipd.effective_date))
+	printf("Effective date:    %s\n",tmpstr);
+
+    printf("Size:              %d blocks (%d bytes)\n",imagesize,
+	   imagesize_bytes);
   }
 
 
   /* read the image */
 
   if (!info_only) {
-    printf("Reading the ISO9660 image (%dMb)...",imagesize_bytes/(1024*1024));
+    fprintf(stderr,"Reading the ISO9660 image (%dMb)...",
+	    imagesize_bytes/(1024*1024));
 
     do {
       len=buffersize;
       read_10(start+counter,READBLOCKS,buffer,&len);
-      printf("."); fflush(stdout);
-      counter+=(len/BLOCKSIZE);
+      if ((counter%(1024*1024/BLOCKSIZE))<READBLOCKS) {
+	fprintf(stderr,".",counter);
+      }
+      counter+=READBLOCKS;
       readsize+=len;
       fwrite(buffer,len,1,outfile);
     } while (len==BLOCKSIZE*READBLOCKS && readsize<imagesize*2048);
     
-    printf("\ndone.\n");
+    fprintf(stderr,"\ndone.\n");
     if (readsize > imagesize_bytes) ftruncate(fileno(outfile),imagesize_bytes);
+    if (readsize < imagesize_bytes) fprintf(stderr,"Image not complete!\n");
 
     fclose(outfile);
   }
 
   start_stop(0);
   set_removable(1);
+#ifdef SGI
   dsclose(dsp);
+#endif
+#ifdef LINUX
+  close(fd);
+#endif
+
+  return 0;
 }
 
 

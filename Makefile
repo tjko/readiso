@@ -3,7 +3,7 @@
 # Makefile for readiso for *nix environments
 #
 #
-Version = 0.2
+Version = 0.3alpha
 PKGNAME = readiso
 
 # Compile Options:
@@ -20,11 +20,11 @@ GROUP	= root
 
 # if necessary define where jpeglib and it's headers are located
 LIBDIR  = # -L/usr/local/lib
-INCDIR  = # -I/usr/local/include
+INCDIR  = # -I/usr/src/linux/include/scsi
 
 
-CC     = cc -g
-CFLAGS =  $(DEFINES) $(INCDIR)  # -N
+CC     = gcc 
+CFLAGS = -O2 $(DEFINES) $(INCDIR)  # -N
 LIBS   = -lds $(LIBDIR)
 STRIP  = strip
 
@@ -36,7 +36,7 @@ DIRNAME = $(shell basename `pwd`)
 DISTNAME  = $(PKGNAME)-$(Version)
 
 
-$(PKGNAME):	$(PKGNAME).c
+$(PKGNAME):	$(PKGNAME).c Makefile
 	$(CC) $(CFLAGS) -o $(PKGNAME) $(PKGNAME).c $(LIBS) 
 
 all:	$(PKGNAME) 
