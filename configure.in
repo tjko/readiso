@@ -18,36 +18,19 @@ AC_PROG_MAKE_SET
 
 dnl check if compiling for supported platform 
 
+
 case "$host" in
+
+   *-linux-*) 
+	echo "You seem to be using Linux..."
+	type_target=linux
+	;;
+
+
    *-sgi-irix*)
 	echo "You seem to be using Irix..."
-	AC_DEFINE(IRIX)
-	AC_DEFINE(DEFAULT_DEV,"/dev/scsi/sc0d4l0")
-	ARCHOBJS="scsi_irix.o"
-	TARGET_SGI=yes
-	AC_CHECK_LIB(ds, dsopen, ,[
-           echo "Cannot find libds (generic user mode SCSI driver lib)."
-           exit 1
-          ])
-        AC_CHECK_HEADERS(dslib.h, ,[
-           echo "Cannot find <dslib.h>  You need libds headers."
-           exit 1
-          ])
-	LIBS="$LIBS -lfpe -laudio -lcdaudio -laudiofile"
+	type_target=irix
 	;;
-
-   *-linux-*) (
-	echo "You seem to be using Linux..."
-	AC_DEFINE(LINUX)
-	AC_DEFINE(DEFAULT_DEV,"/dev/sg0")
-	ARCHOBJS="scsi_linux.o"
-	TARGET_LINUX=yes
-        AC_CHECK_HEADERS(scsi/sg.h,,[
-          echo "Cannot find <scsi/sg.h> you need it."
-          exit 1
-         ]) )
-	;;
-
 
 
    *)
@@ -55,12 +38,12 @@ case "$host" in
 	echo "(feel free to add support for your OS :)"
 	exit 1
    ;;
+
 esac
 
-AC_SUBST(ARCHOBJS)
+
 
 dnl Checks for libraries.
-
 
 
 
@@ -80,6 +63,36 @@ AC_CHECK_SIZEOF(int)
 dnl Checks for library functions.
 AC_CHECK_FUNCS(getopt_long, break, [GNUGETOPT="getopt.o getopt1.o"])
 AC_SUBST(GNUGETOPT)
+
+
+if test $type_target = irix; then
+  AC_DEFINE(IRIX)
+  AC_DEFINE(DEFAULT_DEV,"/dev/scsi/sc0d4l0")
+  ARCHOBJS="scsi_irix.o"
+  AC_CHECK_LIB(ds, dsopen, ,[
+           echo "Cannot find libds (generic user mode SCSI driver lib)."
+           exit 1
+    ])
+  AC_CHECK_HEADERS(dslib.h, ,[
+           echo "Cannot find <dslib.h>  You need libds headers."
+           exit 1
+    ])
+  LIBS="$LIBS -lfpe -laudio -lcdaudio -laudiofile"
+fi
+
+if test $type_target = linux; then
+  AC_DEFINE(LINUX)
+  AC_DEFINE(DEFAULT_DEV,"/dev/sg0")
+  ARCHOBJS="scsi_linux.o"
+  AC_CHECK_HEADERS(scsi/sg.h,,[
+          echo "Cannot find <scsi/sg.h> you need it."
+          exit 1
+    ]) 
+
+fi
+
+
+AC_SUBST(ARCHOBJS)
 
 
 

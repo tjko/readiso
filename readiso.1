@@ -8,19 +8,20 @@ ISO9660 and other format cd-roms into image files
 .B readiso
 [ 
 .B options 
-] [ 
+] < 
 .B imagename
-] 
+> 
 
 .SH DESCRIPTION 
 .I readiso
-is used to generate image file from the cd-rom. Produced image
+is used to generate image file(s) from the tracks on cd. Produced image
 file does not contain any extra headers, so it's ready to be writen
-back to blank disc using some writing software (like cdwrite). In Linux
+back to blank disc using some writing software (like cdrecord or cdwrite). 
+In Linux
 it's also possible to mount the image file 
 (eg. mount -t iso9960 -o loop,ro /foo/myimage.cd /mnt)
-NOTE! Current version is also able to dump non ISO9660 cd's to image file,
-it's also possible to copy audio tracks into AIFF (AIFF-C) files.
+NOTE! Current version is also able to dump non ISO9660 cds to image files.
+In Irix, it's also possible to copy audio tracks into AIFF (AIFF-C) files.
 
 .SH OPTIONS
 .PP
@@ -76,6 +77,9 @@ to determine the actual size of the image.
 .B --track=<number>
 Reads specified track (default is to read first data track found).
 .TP 0.6i
+.B --scanbus
+Scan SCSI bus and exit.
+.TP 0.6i
 .B --dumpaudio=<lba,n>
 Dump raw audio sectors with subcode-q data (2352 + 16 bytes).
 .TP 0.6i
@@ -85,8 +89,8 @@ Select AIFF as output file format for audio tracks.
 .B --aiffc
 Select AIFF-C as output file format for audio tracks.
 
-.SH BUGS
-Dumping of audio tracks works only with TOSHIBA drives.
+.SH BUGS (or features :)
+Dumping of audio tracks works only with SGI Irix.
 
 .SH "SEE ALSO" 
 cdwrite(1), cddaread(1)
@@ -95,7 +99,7 @@ cdwrite(1), cddaread(1)
 Timo Kokkonen (tjko@iki.fi)
 
 .SH COPYING
-Copyright (C) 1997-1998  Timo Kokkonen
+Copyright (C) 1997-1999  Timo Kokkonen
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by
