@@ -11,7 +11,7 @@ PKGNAME = readiso
 #  -DLINUX    for Linux (not working at this moment)
 #  -DSGI      for Silicon Graphics
 
-DEFINES = -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc0d3l0\"
+DEFINES = -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc0d4l0\"
 
 PREFIX  = /usr/local
 BINDIR  = $(PREFIX)/bin

@@ -689,7 +689,10 @@ int main(int argc, char **argv)
 
     do {
       len=buffersize;
-      read_10(start+counter,READBLOCKS,buffer,&len);
+      if(readsize/BLOCKSIZE+READBLOCKS>imagesize)
+	read_10(start+counter,imagesize-readsize/BLOCKSIZE,buffer,&len);
+      else
+	read_10(start+counter,READBLOCKS,buffer,&len);
       if ((counter%(1024*1024/BLOCKSIZE))<READBLOCKS) {
 	fprintf(stderr,"%3dM of %dM read.         \r",
 		counter/512,imagesize/512);
