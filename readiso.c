@@ -1,7 +1,7 @@
 /* readiso.c -- program to read ISO9660 image from (scsi) cd-rom
  * $Id$
  *
- * Copyright (c) 1997-1998  Timo Kokkonen <tjko@iki.fi>
+ * Copyright (c) 1997-1999  Timo Kokkonen <tjko@iki.fi>
  *
  * 
  * This file may be copied under the terms and conditions 
@@ -9,7 +9,7 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "v1.2"
+#define VERSION "v1.2.1"
 #define PRGNAME "readiso"
 
 #include <stdio.h>
@@ -57,6 +57,11 @@
 
 /* debug macro to print buffer in hex */
 #define PRINT_BUF(x,n) { int i; for(i=0;i<n;i++) printf("%02x ",(unsigned char*)x[i]); printf("\n"); fflush(stdout); }
+
+/* macros for building MSF values from LBA */
+#define LBA_MIN(x) ((x)/(60*75))
+#define LBA_SEC(x) (((x)%(60*75))/75)
+#define LBA_FRM(x) ((x)%75)
 
 
 /* mode definitions for scsi_request() function */
@@ -267,7 +272,7 @@ void warn(char *format, ...)
 void p_usage(void) 
 {
   fprintf(stderr, PRGNAME " " VERSION "  "
-	  "Copyright (c) Timo Kokkonen, 1997-1998.\n"); 
+	  "Copyright (c) Timo Kokkonen, 1997-1999.\n"); 
 
   fprintf(stderr,
 	  "Usage: " PRGNAME " [options] <imagefile>\n\n"
@@ -308,7 +313,7 @@ int scsi_request(char *note, unsigned char *reply, int *replylen,
   int result,i;
   unsigned char *buf,*databuf;
 
-  buf=CMDBUF(dsp);
+  buf=(unsigned char*)CMDBUF(dsp);
   databuf=(unsigned char*)malloc(datalen);
 
   va_start(args,mode);
@@ -316,7 +321,7 @@ int scsi_request(char *note, unsigned char *reply, int *replylen,
   for (i=0;i<datalen;i++) databuf[i]=va_arg(args,unsigned int);
   va_end(args);
 
-  CMDBUF(dsp)=buf;
+  CMDBUF(dsp)=(caddr_t)buf;
   CMDLEN(dsp)=cmdlen;
   
   if (mode&SCSIR_READ) 
@@ -404,15 +409,15 @@ int inquiry(char *manufacturer, char *model, char *revision) {
 
   for(i=35;i>32;i--) if(bytes[i]!=' ') break;
   bytes[i+1]=0;
-  strncpy(revision,&bytes[32],5);
+  strncpy(revision,(const char*)&bytes[32],5);
 
   for(i=31;i>16;i--) if(bytes[i]!=' ') break;
   bytes[i+1]=0;
-  strncpy(model,&bytes[16],17);
+  strncpy(model,(const char*)&bytes[16],17);
 
   for(i=15;i>8;i--) if(bytes[i]!=' ') break;
   bytes[i+1]=0;
-  strncpy(manufacturer,&bytes[8],9);
+  strncpy(manufacturer,(const char*)&bytes[8],9);
 
   return result;
 }
@@ -497,7 +502,7 @@ int mode_select(int bsize, int density)
 		     density,B3(0),0,B3(bsize) );
 }
 
-playaudio(void *arg, CDDATATYPES type, short *audio)
+void playaudio(void *arg, CDDATATYPES type, short *audio)
 {
   if (audio_mode) ALwritesamps(audioport, audio, CDDA_NUMSAMPLES);
   if (!dump_mode) AFwriteframes(aiffoutfile,AF_DEFAULT_TRACK,audio,
@@ -511,7 +516,8 @@ int main(int argc, char **argv)
   iso_primary_descriptor_type  ipd;
   char *dev = default_dev;
   char vendor[9],model[17],rev[5];
-  char reply[1024],tmpstr[255];
+  unsigned char reply[1024];
+  char tmpstr[255];
   int replylen=sizeof(reply);
   int trackno = 0;
   int info_only = 0;
@@ -622,7 +628,10 @@ int main(int argc, char **argv)
   if (!info_only) {
     if (md5_mode==2) outfile=fopen("/dev/null","w");
     else outfile=fopen(argv[optind],"w");
-    if (!outfile) die("cannot open output file '%s'",argv[optind]);
+    if (!outfile) {
+      if (argv[optind]) die("cannot open output file '%s'",argv[optind]);
+      info_only=1;
+    }
   }
 
   /* open the scsi device */
@@ -668,9 +677,12 @@ int main(int argc, char **argv)
       audio_mode=0;
     }
   }
+
   /* Make sure we get sane underflow exception handling */
   sigfpe_[_UNDERFL].repls = _ZERO;
   handle_sigfpes(_ON, _EN_UNDERFL, NULL, _ABORT_ON_ERROR, NULL);
+
+
   set_removable(1);
   replylen=sizeof(reply);
   if (dump_mode==2) init_bsize=AUDIOBLOCKSIZE;
@@ -817,12 +829,20 @@ int main(int argc, char **argv)
       if (!NULLISODATE(ipd.effective_date))
 	printf("Effective date:    %s\n",tmpstr);
       
-      printf("Image size:        %d blocks (%ld bytes)\n",
-	     ISONUM(ipd.volume_space_size),
-	     (long)ISONUM(ipd.volume_space_size)*BLOCKSIZE);
-      printf("Track size:        %d blocks (%ld bytes)\n",
-	     tracksize,
-	     (long)tracksize*BLOCKSIZE);
+      printf("Image size:        %02d:%02d:%02d, %d blocks (%ld bytes)\n",
+	      LBA_MIN(ISONUM(ipd.volume_space_size)),
+	      LBA_SEC(ISONUM(ipd.volume_space_size)),
+	      LBA_FRM(ISONUM(ipd.volume_space_size)),
+	      ISONUM(ipd.volume_space_size),
+	      (long)ISONUM(ipd.volume_space_size)*BLOCKSIZE
+	     );
+      printf("Track size:        %02d:%02d:%02d, %d blocks (%ld bytes)\n",
+	      LBA_MIN(tracksize),
+	      LBA_SEC(tracksize),
+	      LBA_FRM(tracksize),
+	      tracksize,
+	      (long)tracksize*BLOCKSIZE
+	     );
     }
   } else { 
     /* if reading audio track */
@@ -856,8 +876,9 @@ int main(int argc, char **argv)
 
     do {
       len=buffersize;
-      if(readsize/readblocksize+READBLOCKS>imagesize)
+      if(readsize/readblocksize+READBLOCKS>imagesize) {
 	read_10(start+counter,imagesize-readsize/readblocksize,buffer,&len);
+      }
       else
 	read_10(start+counter,READBLOCKS,buffer,&len);
       if ((counter%(1024*1024/readblocksize))<READBLOCKS) {
@@ -891,9 +912,9 @@ int main(int argc, char **argv)
     }
   }
 
-  if (md5_mode) {
-    MD5Final(digest,MD5);
-    md2str(digest,digest_text);
+  if (md5_mode && !info_only) {
+    MD5Final((unsigned char*)digest,MD5);
+    md2str((unsigned char*)digest,digest_text);
     fprintf(stderr,"MD5 (%s) = %s\n",(md5_mode==2?"'image'":argv[optind]),
 	    digest_text);
   }
