@@ -9,7 +9,7 @@
  * Software Foundation (Cambridge, Massachusetts).
  */
 
-#define VERSION "v1.2beta"
+#define VERSION "v1.2"
 #define PRGNAME "readiso"
 
 #include <stdio.h>
@@ -191,7 +191,7 @@ int fd;    /* file descriptor of the scsi device open */
 static char rcsid[] = "$Id$";
 static int verbose_mode = 0;
 static int dump_mode = 0;
-static int audio_mode = 1;
+static int audio_mode = 0;
 static FILE *outfile=NULL;
 
 static struct option long_options[] = {
@@ -650,6 +650,10 @@ int main(int argc, char **argv)
     printf("Vendor:   %s\nModel:    %s\nRevision: %s\n",vendor,model,rev);
   }
 
+  if (strcmp(vendor,"TOSHIBA")) {
+    warn("NOTE! Audio track reading not supported on this device.\n");
+  }
+
   test_ready();
   if (test_ready()!=0) {
     sleep(2);
@@ -676,8 +680,6 @@ int main(int argc, char **argv)
   drive_block_size=V3(&reply[9]);
   if (drive_block_size!=init_bsize) die("cannot set drive block size.");
   start_stop(1);
-  fprintf(stderr,"block size=%d\n",drive_block_size);
-
 
   if (dump_mode && !info_only) {
     CDFRAME buf;
@@ -848,7 +850,8 @@ int main(int argc, char **argv)
   if (md5_mode) MD5Init(MD5);
 
   if (!info_only) {
-    fprintf(stderr,"Reading the ISO9660 image (%ldMb)...\n",
+    fprintf(stderr,"Reading %s (%ldMb)...\n",
+	    audio_track?"audio track":"ISO9660 image",
 	    imagesize_bytes/(1024*1024));
 
     do {

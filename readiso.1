@@ -1,8 +1,8 @@
-.TH READISO 1 "26 Feb 1998" 
+.TH READISO 1 "24 Jul 1998" 
 .UC 4 
 .SH NAME 
 readiso \- reads
-ISO9660 format cd-rom into image file
+ISO9660 and other format cd-roms into image files
 
 .SH SYNOPSIS 
 .B readiso
@@ -14,18 +14,19 @@ ISO9660 format cd-rom into image file
 
 .SH DESCRIPTION 
 .I readiso
-is used to generate image file from the ISO9660 format cd, produced image
+is used to generate image file from the cd-rom. Produced image
 file does not contain any extra headers, so it's ready to be writen
 back to blank disc using some writing software (like cdwrite). In Linux
 it's also possible to mount the image file 
 (eg. mount -t iso9960 -o loop,ro /foo/myimage.cd /mnt)
-NOTE! Current version is also able to dump non ISO9660 cd's to image file.
+NOTE! Current version is also able to dump non ISO9660 cd's to image file,
+it's also possible to copy audio tracks into AIFF (AIFF-C) files.
 
 .SH OPTIONS
 .PP
-Options are  the traditional POSIX one letter options.
-POSIX style options start with a single
-``\-''.
+Options may be either the traditional POSIX one letter options, or the
+GNU style long options.  POSIX style options start with a single
+``\-'', while GNU long options start with ``\-\^\-''.
 
 Options offered by
 .I readiso
@@ -70,14 +71,22 @@ trust disc's TOC record.
 Normally, if program thinks that ISO primary descpritor has suspicious
 (too small) value for volume size, it uses automagically TOC record
 to determine the actual size of the image.
+.RE
 .TP 0.6i
 .B --track=<number>
 Reads specified track (default is to read first data track found).
-
-
+.TP 0.6i
+.B --dumpaudio=<lba,n>
+Dump raw audio sectors with subcode-q data (2352 + 16 bytes).
+.TP 0.6i
+.B --aiff
+Select AIFF as output file format for audio tracks.
+.TP 0.6i
+.B --aiffc
+Select AIFF-C as output file format for audio tracks.
 
 .SH BUGS
-Not tested with multisession discs.
+Dumping of audio tracks works only with TOSHIBA drives.
 
 .SH "SEE ALSO" 
 cdwrite(1), cddaread(1)
