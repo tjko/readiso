@@ -1,4 +1,4 @@
-.TH READISO 1 "22 Oct 1997" 
+.TH READISO 1 "26 Feb 1998" 
 .UC 4 
 .SH NAME 
 readiso \- reads
@@ -19,7 +19,7 @@ file does not contain any extra headers, so it's ready to be writen
 back to blank disc using some writing software (like cdwrite). In Linux
 it's also possible to mount the image file 
 (eg. mount -t iso9960 -o loop,ro /foo/myimage.cd /mnt)
-
+NOTE! Current version is also able to dump non ISO9660 cd's to image file.
 
 .SH OPTIONS
 .PP
@@ -31,43 +31,62 @@ Options offered by
 .I readiso
 are the following:
 .TP 0.6i
-.B -d<device>
+.B -d<device>, --device=<device>
 Specifies the scsi device to use (instead of the default device,
 which is specified during the compilation) 
 .TP 0.6i
-.B -h
+.B -h, --help
 Displays short usage information and exits.
 .TP 0.6i
-.B -i
+.B -i, --info
 Display only the disc TOC record and information about the ISO9660 image
 (no need to specify image file when using this option).
 .TP 0.6i
-.B -m
+.B -m, --md5
 Calculate also MD5 checksum for imagefile (uses RSA Data Security, Inc. 
 MD5 Message-Digest Algorithm).
 .TP 0.6i
-.B -M 
+.B -M, --MD5 
 Calculate MD5 checksum of disc (without creating the imagefile).
-.TP 0.6i
-.B -t<number>
-Reads specified track (default is to read first data track found).
 .TP 0.6i
 .B -v, --verbose
 Enables verbose mode (positively chatty).
+.TP 0.6i
+.B --dump=<lba,n>
+Dump (copy) n sectors from cd, starting from lba.
+.TP 0.6i
+.B --force=<mode>
+Force program to trust blindly either ISO primary descriptor or
+TOC record for the size of image.
+Mode can be one of the following:
+.RS
+.TP
+.B 1
+trust ISO primary descriptor 
+.TP
+.B 2
+trust disc's TOC record.
+.PP 
+Normally, if program thinks that ISO primary descpritor has suspicious
+(too small) value for volume size, it uses automagically TOC record
+to determine the actual size of the image.
+.TP 0.6i
+.B --track=<number>
+Reads specified track (default is to read first data track found).
 
 
 
 .SH BUGS
-No support for handling multisession discs.
+Not tested with multisession discs.
 
 .SH "SEE ALSO" 
-cdwrite(1)
+cdwrite(1), cddaread(1)
 
 .SH AUTHOR
-Timo Kokkonen (tjko@jyu.fi)
+Timo Kokkonen (tjko@iki.fi)
 
 .SH COPYING
-Copyright (C) 1997  Timo Kokkonen
+Copyright (C) 1997-1998  Timo Kokkonen
 
 This program is free software; you can redistribute it and/or modify
 it under the terms of the GNU General Public License as published by

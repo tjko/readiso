@@ -1,5 +1,5 @@
 
-readiso v1.0  Copyright (c)  Timo Kokkonen, 1997-1998.
+readiso v1.1  Copyright (c)  Timo Kokkonen, 1997-1998.
 
 
 TESTED PLATFORMS
@@ -22,13 +22,17 @@ INSTALLATION
 
 		zcat readiso-1.0.tar.gz | tar xf -
 		cd readiso
-		<edit Makefile>
+		./configure
 		make
 		make strip
 		make install
 
 
 HISTORY
+	v1.1   - support for reading non ISO9660 discs,
+	 	 now uses free MD5 algorithm, support for long options,
+		 uses GNU autoconf (hopefully making the compiling of
+	         this program bit easier)
 	v1.0   - first stable version, only minor changes to v0.5,
 		 no need to upgrade if you have allready v0.5.
 	v0.5   - added MD5 checksum calculation for imagefiles/discs.	
@@ -44,14 +48,9 @@ HISTORY
 LATEST VERSION
 
 	Latest version is always available from:
-		http://www.jyu.fi/~tjko/projects.html
-
-
-ACKNOWLEDGEMENTS
-	This software contains parts derived from the RSA Data Security, Inc.
-	MD5 Message-Digest Algorithm.
+		http://www.iki.fi/tjko/projects.html
 
 
 
-Timo <tjko@jyu.fi>
-05-Jan-1998
+Timo <tjko@iki.fi>
+26-Feb-1998
