@@ -8,7 +8,7 @@ Version = 1.0
 PKGNAME = readiso
 
 # Compile Options:
-#  -DLINUX    for Linux
+#  -DLINUX    for Linux (not working at this moment)
 #  -DSGI      for Silicon Graphics
 
 DEFINES = -DSGI -DDEFAULT_DEV=\"/dev/scsi/sc0d3l0\"
@@ -30,7 +30,7 @@ LIBS   = -lds $(LIBDIR)
 STRIP  = strip
 
 
-# should be no reason to modify lines below this
+# there should be no reason to modify lines below this
 #########################################################################
 
 DIRNAME = $(shell basename `pwd`) 
@@ -50,9 +50,10 @@ clean:
 	rm -f *~ $(OBJS) core a.out make.log $(PKGNAME)
 
 dist:	clean
-	(cd .. ; tar cvzf $(DISTNAME).tar.gz $(DIRNAME))
+	(cd .. ; tar -cvzf $(DISTNAME).tar.gz --exclude RCS $(DIRNAME))
 
-backup:	dist
+backup:	clean
+	(cd .. ; tar cvzf $(DISTNAME).full.tar.gz $(DIRNAME))
 
 zip:	clean	
 	(cd .. ; zip -r9 $(DISTNAME).zip $(DIRNAME))
